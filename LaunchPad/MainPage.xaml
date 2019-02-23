@@ -51,13 +51,16 @@
                 </TransitionCollection>
             </TextBlock.Transitions>
         </TextBlock>
-        <Canvas Name="PreviewCanavas" Grid.Row="1" Grid.Column="2" Width="512" Height="512">
+        <Image Grid.Row="1" Grid.Column="2" Source="Assets/woodback.jpg" Stretch="Uniform" Width="512" Height="512"/>
+        <Canvas Name="PreviewCanvas" Grid.Row="1" Grid.Column="2" Width="512" Height="512">
             <Canvas.Transitions>
                 <TransitionCollection>
                     <RepositionThemeTransition/>
                 </TransitionCollection>
             </Canvas.Transitions>
-            <Image Source="Assets/woodback.jpg" Stretch="Uniform" Width="512" Height="512"/>
+            <Polyline Name="PreviewPolyline" Width="512" Height="512">
+                
+            </Polyline>
         </Canvas>
     </Grid>
 </Page>
