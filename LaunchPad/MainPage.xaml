@@ -9,6 +9,55 @@
     Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
 
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="256"/>
+            <ColumnDefinition Width="auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
 
+        <Border Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}" Padding="16,16,16,0">
+            <TextBlock Text="Laser Launchpad" FontFamily="Bahnschrift" FontSize="24" TextAlignment="Center"/>
+        </Border>
+        <StackPanel Grid.Row="1" Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}" Padding="16" Spacing="16">
+            <Button Name="LoadSVGButton" Content="Load SVG" FontFamily="Bahnschrift" Click="LoadSVGButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
+        </StackPanel>
+
+        <Border Name="FileTextScrollTitleBlock" Grid.Column="1" Width="320" Background="{StaticResource SystemControlAcrylicWindowBrush}" Visibility="Collapsed" Padding="16,16,16,0">
+            <Border.Transitions>
+                <TransitionCollection>
+                    <PaneThemeTransition Edge="Left"/>
+                </TransitionCollection>
+            </Border.Transitions>
+            <TextBlock Text="SVG File" FontFamily="Bahnschrift" FontSize="24" TextAlignment="Center"/>
+        </Border>
+
+        <ScrollViewer Name="FileTextScrollView" Grid.Row="1" Grid.Column="1" Width="320" HorizontalScrollMode="Disabled" Padding="16" Visibility="Collapsed" Background="{StaticResource SystemControlAcrylicWindowBrush}">
+            <ScrollViewer.Transitions>
+                <TransitionCollection>
+                    <PaneThemeTransition Edge="Left"/>
+                </TransitionCollection>
+            </ScrollViewer.Transitions>
+            <TextBlock Name="FileTextBlock" FontFamily="Consolas" FontSize="14" TextWrapping="Wrap"/>
+        </ScrollViewer>
+
+        <TextBlock Grid.Column="2" Text="Print Preview" FontFamily="Bahnschrift" FontSize="24" TextAlignment="Center" Margin="16,16,16,0">
+            <TextBlock.Transitions>
+                <TransitionCollection>
+                    <RepositionThemeTransition/>
+                </TransitionCollection>
+            </TextBlock.Transitions>
+        </TextBlock>
+        <Canvas Name="PreviewCanavas" Grid.Row="1" Grid.Column="2" Width="512" Height="512">
+            <Canvas.Transitions>
+                <TransitionCollection>
+                    <RepositionThemeTransition/>
+                </TransitionCollection>
+            </Canvas.Transitions>
+            <Image Source="Assets/woodback.jpg" Stretch="Uniform" Width="512" Height="512"/>
+        </Canvas>
     </Grid>
 </Page>
