@@ -24,6 +24,7 @@
         </Border>
         <StackPanel Grid.Row="1" Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}" Padding="16" Spacing="16">
             <Button Name="LoadSVGButton" Content="Load SVG" FontFamily="Bahnschrift" Click="LoadSVGButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
+            <Slider Name="SmoothSlider" Minimum="1" Maximum="10" Header="Smoothness" StepFrequency="0.1" ValueChanged="SmoothSlider_ValueChanged"/>
         </StackPanel>
 
         <Border Name="FileTextScrollTitleBlock" Grid.Column="1" Width="320" Background="{StaticResource SystemControlAcrylicWindowBrush}" Visibility="Collapsed" Padding="16,16,16,0">
