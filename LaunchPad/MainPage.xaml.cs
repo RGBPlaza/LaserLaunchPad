@@ -38,8 +38,10 @@ namespace LaunchPad
 
         StorageFile imageFile;
         FileOpenPicker filePicker;
-        
+        XmlDocument xDoc = new XmlDocument();
         PointF currentStartPoint;
+        float Step { get { return 1 / (float)SmoothSlider.Value; } }
+        List<string> instructions;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -48,19 +50,153 @@ namespace LaunchPad
             return new PointF(x, y);
         }
 
-        List<SvgPathSegmentList> GetPathsFromSvg(XmlDocument xDoc)
+        List<SvgPathSegmentList> GetPathsFromSvg()
         {
-
+            List<SvgPathSegmentList> paths = new List<SvgPathSegmentList>();
+            XmlNodeList Paths = xDoc.GetElementsByTagName("path");
+            foreach (XmlElement path in Paths)
+            {
+                string pathData = path.GetAttribute("d");
+                SvgPathSegmentList segments = SvgPathBuilder.Parse(pathData);
+                paths.Add(segments);
+            }
+            return paths;
         }
 
-        List<string> GetArduinoInstructions(List<SvgPathSegmentList> paths, double smoothness)
+        List<string> GetArduinoInstructions(List<SvgPathSegmentList> paths, float smoothness)
         {
-            
+            List<string> instructions = new List<string>(); foreach (SvgPathSegmentList path in paths)
+            {
+                foreach (SvgPathSegment segment in path)
+                {
+                    if (segment.GetType() == typeof(SvgMoveToSegment))
+                    {
+                        var seg = (SvgMoveToSegment)segment;
+                        // PenUp
+                        // Coord
+                        // PenDown
+
+                        currentStartPoint = seg.End;
+
+                    }
+                    else if (segment.GetType() == typeof(SvgLineSegment))
+                    {
+                        var seg = (SvgLineSegment)segment;
+                        // Coord
+                    }
+                    else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
+                    {
+                        var seg = (SvgQuadraticCurveSegment)segment;
+                        for (float t = 0; t <= 1; t += 0.05f)
+                        {
+                            // Coords
+                        }
+
+                    }
+                    else if (segment.GetType() == typeof(SvgCubicCurveSegment))
+                    {
+                        var seg = (SvgCubicCurveSegment)segment;
+                        for (float t = 0; t <= 1; t += 0.05f)
+                        {
+                            // Coords
+                        }
+
+                    }
+                    else if (segment.GetType() == typeof(SvgArcSegment))
+                    {
+                        var seg = (SvgArcSegment)segment;
+
+                        var arcData = new CenterParameterizedArcData(seg);
+                        // Get Points for Polyline Approximation
+                        for (float t = 0; t <= 1; t += 0.05f)
+                        {
+                            // Coords
+                        }
+
+                    }
+                    else if (segment.GetType() == typeof(SvgClosePathSegment))
+                    {
+                        var seg = (SvgClosePathSegment)segment;
+
+                        if (currentStartPoint != seg.Start) // if length back to start is not zero
+                        {
+                            // Coord 
+                            // PenUp
+                            
+                        }
+
+                    }
+                }
+            }
+            return instructions;
         }
 
-        List<PointCollect> GetPreviewPoints(List<SvgPathSegmentList> paths, double smoothness)
+        Windows.Foundation.Point FToPoint(PointF pointF)
         {
+            return new Windows.Foundation.Point(pointF.X, pointF.Y);
+        }
 
+        List<PointCollection> GetPreviewPoints(List<SvgPathSegmentList> paths)
+        {
+            List<PointCollection> PreviewPoints = new List<PointCollection>();
+            foreach (SvgPathSegmentList path in paths)
+            {
+                foreach (SvgPathSegment segment in path)
+                {
+                    if (segment.GetType() == typeof(SvgMoveToSegment))
+                    {
+                        var seg = (SvgMoveToSegment)segment;
+                        currentStartPoint = seg.End;
+                        PreviewPoints.Add(GetMoveToPointCollection(seg));
+
+                    }
+                    else if (segment.GetType() == typeof(SvgLineSegment))
+                    {
+                        var seg = (SvgLineSegment)segment;                   
+                        PreviewPoints.Last().Add(GetLineToPoint(seg));
+                    }
+                    else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
+                    {
+                        var seg = (SvgQuadraticCurveSegment)segment;
+                        for (float t = 0; t < 1; t += Step)
+                        {
+                            PreviewPoints.Last().Add(GetQuadraticPoint(seg, t));
+                        }
+                        PreviewPoints.Last().Add(FToPoint(seg.End));
+                    }
+                    else if (segment.GetType() == typeof(SvgCubicCurveSegment))
+                    {
+                        var seg = (SvgCubicCurveSegment)segment;
+                        for (float t = 0; t < 1; t += Step)
+                        {
+                            PreviewPoints.Last().Add(GetCubicPoint(seg, t));
+                        }
+                        PreviewPoints.Last().Add(FToPoint(seg.End));
+                    }
+                    else if (segment.GetType() == typeof(SvgArcSegment))
+                    {
+                        var seg = (SvgArcSegment)segment;
+                        var arcData = new CenterParameterizedArcData(seg);
+                        System.Diagnostics.Debug.WriteLine($"Centre ({arcData.cx},{arcData.cy}), Radius ({arcData.rx},{arcData.ry})");
+                        // Get Points for Polyline Approximation
+                        for (float t = 0; t < 1; t += Step)
+                        {
+                            PreviewPoints.Last().Add(GetArcPoint(arcData, t));
+                        }
+                        PreviewPoints.Last().Add(FToPoint(seg.End));
+                    }
+                    else if (segment.GetType() == typeof(SvgClosePathSegment))
+                    {
+                        var seg = (SvgClosePathSegment)segment;
+
+                        if (currentStartPoint != seg.Start) // if length back to start is not zero
+                        {
+                            PreviewPoints.Last().Add(GetClosePathPoint(seg));
+                        }
+                    }
+                }
+            }
+            return PreviewPoints;
         }
 
         PointCollection GetMoveToPointCollection(SvgMoveToSegment seg)
@@ -97,9 +233,18 @@ namespace LaunchPad
             return new Windows.Foundation.Point(point.X, point.Y);
         }
 
+
         Windows.Foundation.Point GetArcPoint(CenterParameterizedArcData arcData, float t)
         {
+            float sinA = MathF.Sin(arcData.angle);
+            float cosA = MathF.Cos(arcData.angle);
+            float theta = arcData.theta0 + (t * arcData.dTheta);
+            float sinT = MathF.Sin(theta);
+            float cosT = MathF.Cos(theta);
+            float x = (cosA * arcData.rx * cosT) - (sinA * arcData.ry * sinT) + arcData.cx;
+            float y = (sinA * arcData.rx * cosT) + (cosA * arcData.ry * sinT) + arcData.cy;
 
+            return new Windows.Foundation.Point(x, y);
         }
 
         Windows.Foundation.Point GetClosePathPoint(SvgClosePathSegment seg)
@@ -107,106 +252,24 @@ namespace LaunchPad
             return new Windows.Foundation.Point(currentStartPoint.X, currentStartPoint.Y);
         }
 
-
-
-        List<PointCollection> GetPointsFromSvg(, double smoothness) {
-            List<PointCollection> PreviewPoints = new List<PointCollection>();
-
-            XmlNodeList Paths = xDoc.GetElementsByTagName("path");
-
-            foreach (XmlElement path in Paths)
+        private void DisplayPreview(List<PointCollection> previewPoints)
+        {
+            PreviewCanvas.Children.Clear();
+            foreach (PointCollection points in previewPoints)
             {
-                string pathData = path.GetAttribute("d");
-                SvgPathSegmentList segments = SvgPathBuilder.Parse(pathData);
-                foreach (SvgPathSegment segment in segments)
+                PreviewCanvas.Children.Add(new Windows.UI.Xaml.Shapes.Polyline()
                 {
-                    if (segment.GetType() == typeof(SvgMoveToSegment))
-                    {
-                        var seg = (SvgMoveToSegment)segment;
-                        // PenUp
-                        // Coord
-                        // PenDown
-
-                        currentStartPoint = seg.End;
-
-                        // Preview
-                        PreviewPoints.Add();
-
-                    }
-                    else if (segment.GetType() == typeof(SvgLineSegment))
-                    {
-                        var seg = (SvgLineSegment)segment;
-                        // Coord
-
-                        // Preview                            
-                        PreviewPoints.Last().Add();
-                    }
-                    else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
-                    {
-                        var seg = (SvgQuadraticCurveSegment)segment;
-                        for (float t = 0; t <= 1; t += 0.05f)
-                        {
-
-                            // Preview
-                            PreviewPoints.Last().Add();
-                        }
-
-                    }
-                    else if (segment.GetType() == typeof(SvgCubicCurveSegment))
-                    {
-                        var seg = (SvgCubicCurveSegment)segment;
-                        for (float t = 0; t <= 1; t += 0.05f)
-                        {
-                            // Preview
-                            PreviewPoints.Last().Add(new Windows.Foundation.Point(point.X, point.Y));
-                        }
-
-                    }
-                    else if (segment.GetType() == typeof(SvgArcSegment))
-                    {
-                        // guidance: www.w3.org/TR/SVG/implnote.html#ArcSyntax
-                        // there is no easy way to do this except convert to centre parameterization lol 
-                        var seg = (SvgArcSegment)segment;
-                        
-                        //System.Diagnostics.Debug.WriteLine($"cx: {cx} cy: {cy}");
-
-                        // Get Points for Polyline Approximation
-                        for (float t = theta0; t <= theta0 + dTheta; t += dTheta / 50)
-                        {
-                            float sinT = MathF.Sin(t);
-                            float cosT = MathF.Cos(t);
-                            float x = (cosA * rx * cosT) - (sinA * ry * sinT) + cx;
-                            float y = (sinA * rx * cosT) + (cosA * ry * sinT) + cy;
-
-                            // Preview
-                            PreviewPoints.Last().Add(new Windows.Foundation.Point(x, y));
-
-                        }
-
-                    }
-                    else if (segment.GetType() == typeof(SvgClosePathSegment))
-                    {
-                        var seg = (SvgClosePathSegment)segment;
-
-                        if (currentStartPoint != seg.Start) // if length back to start is not zero
-                        {
-                            // Coord 
-                            // PenUp
-
-                            // Preview
-                            PreviewPoints.Last().Add();
-                        }
-
-                    }
-                }
+                    Stroke = new SolidColorBrush(Windows.UI.Colors.Black),
+                    StrokeThickness = 2,
+                    Width = 512,
+                    Height = 512,
+                    Points = points
+                });
             }
-            return PreviewPoints;
         }
 
         private async void LoadSVGButton_Click(object sender, RoutedEventArgs e)
         {
-            PreviewCanvas.Children.Clear();
-
             filePicker.FileTypeFilter.Add(".svg");
             filePicker.SuggestedStartLocation = PickerLocationId.Desktop;
             imageFile = await filePicker.PickSingleFileAsync();
@@ -215,29 +278,21 @@ namespace LaunchPad
                 FileTextBlock.Text = imageFileString;
                 FileTextScrollView.Visibility = Visibility.Visible;
                 FileTextScrollTitleBlock.Visibility = Visibility.Visible;
-
-                XmlDocument xDoc = new XmlDocument();
+                SmoothSlider.IsEnabled = true;
+                
                 xDoc.LoadXml(imageFileString);
-
-                var previewPoints = GetPointsFromSvg(xDoc, SmoothSlider.Value);
-                foreach(PointCollection points in previewPoints)
-                {
-                    PreviewCanvas.Children.Add(new Windows.UI.Xaml.Shapes.Polyline()
-                    {
-                        Stroke = new SolidColorBrush(Windows.UI.Colors.Black),
-                        StrokeThickness = 2,
-                        Width = 512,
-                        Height = 512,
-                        Points = points
-                    });
-                }
-
+                var paths = GetPathsFromSvg();
+                DisplayPreview(GetPreviewPoints(paths));
             }
         }
 
         private void SmoothSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
         {
-
+            if (imageFile != null)
+            {
+                var paths = GetPathsFromSvg();
+                DisplayPreview(GetPreviewPoints(paths));
+            }
         }
     }
 
@@ -272,7 +327,7 @@ namespace LaunchPad
             float y0Prime = cosA * dY - sinA * dX;
 
             rx = seg.RadiusX;
-            cy = seg.RadiusY;
+            ry = seg.RadiusY;
 
             // Intermediate Centre Values
             float temp0 = MathF.Pow(rx, 2) * MathF.Pow(ry, 2);
@@ -308,7 +363,8 @@ namespace LaunchPad
                 dTheta -= 2 * MathF.PI;
 
         }
-
+        // guidance: www.w3.org/TR/SVG/implnote.html#ArcSyntax
+        // there is no easy way to do this except convert to centre parameterization lol 
     }
 
 }
