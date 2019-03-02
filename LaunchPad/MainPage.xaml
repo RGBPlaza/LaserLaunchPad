@@ -22,10 +22,16 @@
         <Border Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}" Padding="16,16,16,0">
             <TextBlock Text="Laser Launchpad" FontFamily="Bahnschrift" FontSize="24" TextAlignment="Center"/>
         </Border>
-        <StackPanel Grid.Row="1" Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}" Padding="16" Spacing="16">
-            <Button Name="LoadSVGButton" Content="Load SVG" FontFamily="Bahnschrift" Click="LoadSVGButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
-            <Slider Name="SmoothSlider" Minimum="1" Maximum="10" Header="Smoothness" StepFrequency="0.1" ValueChanged="SmoothSlider_ValueChanged" IsEnabled="False"/>
-        </StackPanel>
+        <RelativePanel Grid.Row="1" Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}">
+            <StackPanel Padding="16" Spacing="16" RelativePanel.AlignTopWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
+                <Button Name="LoadSVGButton" Content="Load SVG" FontFamily="Bahnschrift" Click="LoadSVGButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
+                <Slider Name="SmoothSlider" Minimum="1" Maximum="10" Header="Smoothness" FontFamily="Bahnschrift" StepFrequency="0.1" ValueChanged="SmoothSlider_ValueChanged" IsEnabled="False"/>
+            </StackPanel>
+            <StackPanel Padding="16" Spacing="16" RelativePanel.AlignBottomWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
+                <Slider Name="PassCountSlider" Minimum="1" Maximum="5" StepFrequency="1" Header="Passes" FontFamily="Bahnschrift"/>
+                <Button Name="PrintButton" Content="Print" FontFamily="Bahnschrift" Click="PrintButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
+            </StackPanel>
+        </RelativePanel>
 
         <Border Name="FileTextScrollTitleBlock" Grid.Column="1" Width="320" Background="{StaticResource SystemControlAcrylicWindowBrush}" Visibility="Collapsed" Padding="16,16,16,0">
             <Border.Transitions>
