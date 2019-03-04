@@ -2,23 +2,21 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Runtime.InteropServices.WindowsRuntime;
 using System.Xml;
-using Windows.Foundation;
-using Windows.Foundation.Collections;
 using Windows.Storage;
 using Windows.Storage.Pickers;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
 using Windows.UI.Xaml.Controls.Primitives;
-using Windows.UI.Xaml.Data;
-using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media;
-using Windows.UI.Xaml.Navigation;
 using Svg;
 using Svg.Pathing;
 using System.Drawing;
 using System.IO.Ports;
+using Windows.Devices.SerialCommunication;
+using Windows.Devices.Enumeration;
+using Windows.UI.Xaml.Navigation;
+using Windows.Storage.Streams;
 
 namespace LaunchPad
 {
@@ -38,13 +36,23 @@ namespace LaunchPad
             filePicker = new FileOpenPicker();
         }
 
+        protected override async void OnNavigatedTo(NavigationEventArgs e)
+        {
+            base.OnNavigatedTo(e);
+            var serialDevices = await DeviceInformation.FindAllAsync(SerialDevice.GetDeviceSelector());
+            if(serialDevices.Any())
+                PortComboBox.ItemsSource = serialDevices;
+        }
+
         StorageFile imageFile;
         FileOpenPicker filePicker;
         XmlDocument xDoc = new XmlDocument();
         PointF currentStartPoint;
         float Step { get { return 1 / (float)SmoothSlider.Value; } }
         List<string> instructions;
-        SerialPort cutterPort;
+        SerialDevice cutterSerial;
+        DataReader cutterIn;
+        DataWriter cutterOut;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -294,42 +302,56 @@ namespace LaunchPad
                 instructions = GetArduinoInstructions(paths);
             }
         }
-
-        private void PrintButton_Click(object sender, RoutedEventArgs e)
+        
+        private async void PrintButton_Click(object sender, RoutedEventArgs e)
         {
-            try
+            if (instructions != null)
             {
-                string resp;
-                cutterPort = cutterPort ?? new SerialPort(PORT_NAME);
-                if (instructions != null)
+                for (int pass = 0; pass < PassCountSlider.Value; pass++)
                 {
-                    cutterPort.Open();
-                    for (int pass = 0; pass < PassCountSlider.Value; pass++)
+                    foreach (string instruction in instructions)
                     {
-                        foreach (string instruction in instructions)
+                        string resp = cutterIn.ReadString(cutterIn.UnconsumedBufferLength);
+                        System.Diagnostics.Debug.WriteLine(resp);
+                        if (resp == NEXT_INSTRUCTION_MESSAGE)
                         {
-                            resp = cutterPort.ReadTo(")");
-                            if (resp == NEXT_INSTRUCTION_MESSAGE)
-                                cutterPort.Write(instruction);
-                            else
-                                System.Diagnostics.Debug.WriteLine("Unexpected Message: " + resp);
+                            cutterOut.WriteString(instruction);
+                            await cutterOut.StoreAsync();
+                            await cutterOut.FlushAsync();
+                        }
+                        else if (resp != DRAWING_FINISHED_MESSAGE)
+                        {
+                            System.Diagnostics.Debug.WriteLine("da heck: " + resp);
                         }
                     }
-                    cutterPort.Write(FINISH_DRAWING_MESSAGE);
-                    resp = cutterPort.ReadTo(")");
-                    if (resp == DRAWING_FINISHED_MESSAGE)
-                        cutterPort.Close();
-                    else
-                        System.Diagnostics.Debug.WriteLine("Unexpected Message: " + resp);
-
                 }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("Printing Error: " + ex.Message);
+                cutterOut.WriteString(FINISH_DRAWING_MESSAGE);
+                await cutterOut.StoreAsync();
+                
             }
         }
-            
+
+        private void LoadRasterButton_Click(object sender, RoutedEventArgs e)
+        {
+
+        }
+
+        private async void PortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var device = (DeviceInformation)PortComboBox.SelectedItem;
+            System.Diagnostics.Debug.WriteLine(device.Id);
+            cutterSerial = await SerialDevice.FromIdAsync(device.Id);
+            if (cutterSerial != null)
+            {
+                System.Diagnostics.Debug.WriteLine(cutterSerial.PortName);
+                cutterSerial.Parity = SerialParity.None;
+                cutterSerial.BaudRate = 9600;
+                cutterSerial.DataBits = 8;
+                cutterSerial.StopBits = SerialStopBitCount.One;
+                cutterIn = new DataReader(cutterSerial.InputStream);
+                cutterOut = new DataWriter(cutterSerial.OutputStream);
+            }
+        }
     }
 
     public class CenterParameterizedArcData
