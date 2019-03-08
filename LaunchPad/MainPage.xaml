@@ -30,7 +30,13 @@
             </StackPanel>
             <StackPanel Padding="16" Spacing="16" RelativePanel.AlignBottomWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
                 <Slider Name="PassCountSlider" Minimum="1" Maximum="5" StepFrequency="1" Header="Passes" FontFamily="Bahnschrift"/>
-                <ComboBox Name="PortComboBox" FontFamily="Bahnschrift" Header="Cutter Port" SelectionChanged="PortComboBox_SelectionChanged"/>
+                <ComboBox Name="PortComboBox" FontFamily="Bahnschrift" Header="Cutter Port" DropDownOpened="PortComboBox_DropDownOpened" PlaceholderText="Select Device">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Name}"/>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <Button Name="PrintButton" Content="Print" FontFamily="Bahnschrift" Click="PrintButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
             </StackPanel>
         </RelativePanel>

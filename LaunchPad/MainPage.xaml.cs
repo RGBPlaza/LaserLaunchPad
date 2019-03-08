@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Xml;
 using Windows.Storage;
@@ -12,11 +11,11 @@ using Windows.UI.Xaml.Media;
 using Svg;
 using Svg.Pathing;
 using System.Drawing;
-using System.IO.Ports;
 using Windows.Devices.SerialCommunication;
 using Windows.Devices.Enumeration;
-using Windows.UI.Xaml.Navigation;
-using Windows.Storage.Streams;
+using SerialPortNet;
+using System.Text;
+using SimpleImageEditing;
 
 namespace LaunchPad
 {
@@ -28,20 +27,12 @@ namespace LaunchPad
         const string NEXT_INSTRUCTION_MESSAGE = "Next Please :)";
         const string FINISH_DRAWING_MESSAGE = "That will do, cheers bud :);";
         const string DRAWING_FINISHED_MESSAGE = "All done! :)";
-        const string PORT_NAME = "COM7";
+        SerialPortOptions PORT_OPTIONS = new SerialPortOptions() { BaudRate = 9600, Parity = SerialPortParity.None, StopBits = SerialPortStopBits.One };
 
         public MainPage()
         {
             this.InitializeComponent();
             filePicker = new FileOpenPicker();
-        }
-
-        protected override async void OnNavigatedTo(NavigationEventArgs e)
-        {
-            base.OnNavigatedTo(e);
-            var serialDevices = await DeviceInformation.FindAllAsync(SerialDevice.GetDeviceSelector());
-            if(serialDevices.Any())
-                PortComboBox.ItemsSource = serialDevices;
         }
 
         StorageFile imageFile;
@@ -50,9 +41,7 @@ namespace LaunchPad
         PointF currentStartPoint;
         float Step { get { return 1 / (float)SmoothSlider.Value; } }
         List<string> instructions;
-        SerialDevice cutterSerial;
-        DataReader cutterIn;
-        DataWriter cutterOut;
+        SoftwareBitmapEditor bitmapEditor;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -302,33 +291,55 @@ namespace LaunchPad
                 instructions = GetArduinoInstructions(paths);
             }
         }
-        
+
+        List<string> fullInstructions = new List<string>();
         private async void PrintButton_Click(object sender, RoutedEventArgs e)
         {
-            if (instructions != null)
+            fullInstructions.Clear();
+            var device = (DeviceInformation)PortComboBox.SelectedItem;
+            if (instructions != null && device.Id != null)
             {
                 for (int pass = 0; pass < PassCountSlider.Value; pass++)
                 {
                     foreach (string instruction in instructions)
                     {
-                        string resp = cutterIn.ReadString(cutterIn.UnconsumedBufferLength);
-                        System.Diagnostics.Debug.WriteLine(resp);
-                        if (resp == NEXT_INSTRUCTION_MESSAGE)
-                        {
-                            cutterOut.WriteString(instruction);
-                            await cutterOut.StoreAsync();
-                            await cutterOut.FlushAsync();
-                        }
-                        else if (resp != DRAWING_FINISHED_MESSAGE)
-                        {
-                            System.Diagnostics.Debug.WriteLine("da heck: " + resp);
-                        }
+                        fullInstructions.Add(instruction);
                     }
                 }
-                cutterOut.WriteString(FINISH_DRAWING_MESSAGE);
-                await cutterOut.StoreAsync();
-                
+
+                System.Diagnostics.Debug.WriteLine(device.Id);
+                ManagedSerialPort cutterPort = await SerialPortFactory.CreateForDeviceIdAsync(device.Id, PORT_OPTIONS);
+                cutterPort.MessageReceived += CutterPort_MessageReceived;
+                cutterPort.Initialize();
+                System.Diagnostics.Debug.WriteLine(cutterPort.IsConnected);
             }
+        }
+
+        private void CutterPort_MessageReceived(object sender, MessageReceivedEventArgs e)
+        {
+            string resp = Encoding.ASCII.GetString(e.Data);
+            System.Diagnostics.Debug.WriteLine(resp);
+            ManagedSerialPort cutterPort = (ManagedSerialPort)sender;
+            if (resp == NEXT_INSTRUCTION_MESSAGE)
+            {
+                if (fullInstructions.Any())
+                {
+                    System.Diagnostics.Debug.WriteLine(fullInstructions.First());
+                    byte[] ins = Encoding.ASCII.GetBytes(fullInstructions.First());
+                    cutterPort.Write(ins);
+                    fullInstructions.RemoveAt(0);
+
+                }
+                else
+                {
+                    byte[] msg = Encoding.ASCII.GetBytes(FINISH_DRAWING_MESSAGE);
+                    cutterPort.Write(msg);
+                }
+            }
+            else if (resp == DRAWING_FINISHED_MESSAGE)
+                cutterPort.Dispose();
+            else
+                System.Diagnostics.Debug.WriteLine("Say What: " + resp);
         }
 
         private void LoadRasterButton_Click(object sender, RoutedEventArgs e)
@@ -336,21 +347,11 @@ namespace LaunchPad
 
         }
 
-        private async void PortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        private async void PortComboBox_DropDownOpened(object sender, object e)
         {
-            var device = (DeviceInformation)PortComboBox.SelectedItem;
-            System.Diagnostics.Debug.WriteLine(device.Id);
-            cutterSerial = await SerialDevice.FromIdAsync(device.Id);
-            if (cutterSerial != null)
-            {
-                System.Diagnostics.Debug.WriteLine(cutterSerial.PortName);
-                cutterSerial.Parity = SerialParity.None;
-                cutterSerial.BaudRate = 9600;
-                cutterSerial.DataBits = 8;
-                cutterSerial.StopBits = SerialStopBitCount.One;
-                cutterIn = new DataReader(cutterSerial.InputStream);
-                cutterOut = new DataWriter(cutterSerial.OutputStream);
-            }
+            var serialDevices = await DeviceInformation.FindAllAsync(SerialDevice.GetDeviceSelector());
+            if (serialDevices.Any())
+                PortComboBox.ItemsSource = serialDevices;
         }
     }
 
