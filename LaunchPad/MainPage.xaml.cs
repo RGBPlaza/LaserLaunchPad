@@ -15,7 +15,8 @@ using Windows.Devices.SerialCommunication;
 using Windows.Devices.Enumeration;
 using SerialPortNet;
 using System.Text;
-using SimpleImageEditing;
+using Windows.Graphics.Imaging;
+using Windows.Storage.Streams;
 
 namespace LaunchPad
 {
@@ -41,7 +42,7 @@ namespace LaunchPad
         PointF currentStartPoint;
         float Step { get { return 1 / (float)SmoothSlider.Value; } }
         List<string> instructions;
-        SoftwareBitmapEditor bitmapEditor;
+        BitmapEditor bitmapEditor;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -262,8 +263,98 @@ namespace LaunchPad
             }
         }
 
+        private void DisplayPreview(bool[,] bwMap)
+        {
+            List<Windows.UI.Xaml.Shapes.Rectangle> prevLines = GetPreviewRects(bwMap, (uint)LaminationSlider.Value);
+            PreviewCanvas.Children.Clear();
+            foreach (var rect in prevLines)
+            {
+                rect.Fill = new SolidColorBrush(Windows.UI.Colors.Black);
+                rect.StrokeThickness = 0;
+                PreviewCanvas.Children.Add(rect);
+            }
+        }
+
+        private async void LoadRasterButton_Click(object sender, RoutedEventArgs e)
+        {
+            filePicker.FileTypeFilter.Clear();
+            filePicker.FileTypeFilter.Add(".bmp");
+            filePicker.FileTypeFilter.Add(".png");
+            filePicker.FileTypeFilter.Add(".jpg");
+            imageFile = await filePicker.PickSingleFileAsync();
+            if (imageFile != null)
+            {
+                using (IRandomAccessStream stream = await imageFile.OpenAsync(FileAccessMode.ReadWrite))
+                {
+                    BitmapDecoder decoder = await BitmapDecoder.CreateAsync(stream);
+                    if (decoder.BitmapPixelFormat == BitmapPixelFormat.Bgra8)
+                    {
+                        ThresholdSlider.Visibility = Visibility.Visible;
+                        LaminationSlider.Visibility = Visibility.Visible;
+                        NegativeSwitch.Visibility = Visibility.Visible;
+                        PassCountSlider.Visibility = Visibility.Collapsed;
+                        SmoothSlider.Visibility = Visibility.Collapsed;
+                        FileTextScrollTitleBlock.Visibility = Visibility.Collapsed;
+                        FileTextBlock.Visibility = Visibility.Collapsed;
+                        PrintButton.IsEnabled = true;
+
+                        System.Diagnostics.Debug.WriteLine(decoder.BitmapAlphaMode);
+                        PixelDataProvider pixelData = await decoder.GetPixelDataAsync();
+                        bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
+                        bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
+                        DisplayPreview(bwMap);
+                    }
+                }
+            }
+        }
+
+        public List<Windows.UI.Xaml.Shapes.Rectangle> GetPreviewRects(bool[,] bwMap, uint lamination)
+        {
+            List<Windows.UI.Xaml.Shapes.Rectangle> rects = new List<Windows.UI.Xaml.Shapes.Rectangle>();
+            int width = bwMap.GetLength(0);
+            int height = bwMap.GetLength(1);
+            uint lineStart;                    // Equals width when a line hasn't been started
+            uint lineEnd;
+            for (uint y = 0; y < height; y += lamination)
+            {
+                lineStart = (uint)width;
+                lineEnd = (uint)width;
+                for (uint x = 0; x < width; x++)
+                {
+                    if (bwMap[x, y])
+                    {
+                        if(lineStart == width) // Not currenntly drawing
+                        {
+                            lineStart = x;
+                        }
+                        else if(x == width - 1)
+                        {
+                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = width - 1 - lineStart, Height = lamination };
+                            Canvas.SetTop(rect, y);
+                            Canvas.SetLeft(rect, lineStart);
+                            rects.Add(rect);
+                        }
+                    }
+                    else
+                    {
+                        if(lineStart != width) // Currently drawing
+                        {
+                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = x - 1 - lineStart, Height = lamination };
+                            Canvas.SetTop(rect, y);
+                            Canvas.SetLeft(rect, lineStart);
+                            rects.Add(rect);
+
+                            lineStart = (uint)width;
+                        }
+                    }
+                }
+            }
+            return rects;
+        }
+
         private async void LoadSVGButton_Click(object sender, RoutedEventArgs e)
         {
+            filePicker.FileTypeFilter.Clear();
             filePicker.FileTypeFilter.Add(".svg");
             filePicker.SuggestedStartLocation = PickerLocationId.Desktop;
             imageFile = await filePicker.PickSingleFileAsync();
@@ -272,7 +363,11 @@ namespace LaunchPad
                 FileTextBlock.Text = imageFileString;
                 FileTextScrollView.Visibility = Visibility.Visible;
                 FileTextScrollTitleBlock.Visibility = Visibility.Visible;
-                SmoothSlider.IsEnabled = true;
+                SmoothSlider.Visibility = Visibility.Visible;
+                PassCountSlider.Visibility = Visibility.Visible;
+                ThresholdSlider.Visibility = Visibility.Collapsed;
+                LaminationSlider.Visibility = Visibility.Collapsed;
+                NegativeSwitch.Visibility = Visibility.Collapsed;
                 PrintButton.IsEnabled = true;
 
                 xDoc.LoadXml(imageFileString);
@@ -342,16 +437,38 @@ namespace LaunchPad
                 System.Diagnostics.Debug.WriteLine("Say What: " + resp);
         }
 
-        private void LoadRasterButton_Click(object sender, RoutedEventArgs e)
-        {
-
-        }
-
         private async void PortComboBox_DropDownOpened(object sender, object e)
         {
             var serialDevices = await DeviceInformation.FindAllAsync(SerialDevice.GetDeviceSelector());
             if (serialDevices.Any())
                 PortComboBox.ItemsSource = serialDevices;
+        }
+
+        private void ThresholdSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (bitmapEditor != null)
+            {
+                bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
+                DisplayPreview(bwMap);
+            }
+        }
+
+        private void NegativeSwitch_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (bitmapEditor != null)
+            {
+                bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
+                DisplayPreview(bwMap);
+            }
+        }
+
+        private void LaminationSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (bitmapEditor != null)
+            {
+                bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
+                DisplayPreview(bwMap);
+            }
         }
     }
 
@@ -443,6 +560,74 @@ namespace LaunchPad
         public static string ToCoordString(this PointF point)
         {
             return $"({point.X},{point.Y});";
+        }
+    }
+
+    public class BitmapPixel
+    {
+        public uint R;
+        public uint G;
+        public uint B;
+        public uint A;
+
+        public BitmapPixel(uint r, uint g, uint b, uint a)
+        {
+            R = r;
+            G = g;
+            B = b;
+            A = a;
+        }
+
+    }
+
+    public class BitmapEditor
+    {
+        public readonly int Width;
+        public readonly int Height;
+        private readonly bool ignoreAlpha;
+        private readonly List<BitmapPixel> pixels;
+
+        public BitmapEditor(PixelDataProvider pixelDataProvider, uint width, uint height, bool ignoreAlpha)
+        {
+            byte[] pixelData = pixelDataProvider.DetachPixelData();
+            Width = (int)width;
+            Height = (int)height;
+            this.ignoreAlpha = ignoreAlpha;
+            pixels = new List<BitmapPixel>();
+            for(int i = 0; i < pixelData.Length; i += 4)
+            {
+                pixels.Add(new BitmapPixel(pixelData[i], pixelData[i + 1], pixelData[i + 2], pixelData[i + 3]));
+            }
+        }
+
+        public BitmapPixel GetPixel(int x, int y)
+        {
+            int pixelIndex = (y * Width) + x;
+            return pixels[pixelIndex];
+        }
+
+        public void SetPixel(int x, int y, BitmapPixel pixel)
+        {
+            int pixelIndex = (y * Width) + (x * 4);
+            pixels[pixelIndex] = pixel;
+        }
+
+        public bool[,] GetBWMap(uint threshold, bool printNegative)
+        {
+            bool[,] bwMap = new bool[Width, Height];
+            for (int y = 0; y < Height; y++)
+            {
+                for (int x = 0; x < Width; x++)
+                {
+                    BitmapPixel px = GetPixel(x, y);
+                    uint mean = ((px.R + px.G + px.B) / 3);
+                    mean = printNegative ? 255 - mean : mean;
+                    //System.Diagnostics.Debug.WriteLine($"({px.R},{px.G},{px.B},{px.A}):{mean}");
+                    bool isWhite = mean >= threshold && (ignoreAlpha || px.A >= threshold);
+                    bwMap[x,y] = isWhite;
+                }
+            }
+            return bwMap;
         }
     }
 
