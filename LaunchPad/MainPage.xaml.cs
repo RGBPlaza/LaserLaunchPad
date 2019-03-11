@@ -13,10 +13,11 @@ using Svg.Pathing;
 using System.Drawing;
 using Windows.Devices.SerialCommunication;
 using Windows.Devices.Enumeration;
-using SerialPortNet;
 using System.Text;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
+using Gurux.Serial;
+using Gurux.Common;
 
 namespace LaunchPad
 {
@@ -28,7 +29,6 @@ namespace LaunchPad
         const string NEXT_INSTRUCTION_MESSAGE = "Next Please :)";
         const string FINISH_DRAWING_MESSAGE = "That will do, cheers bud :);";
         const string DRAWING_FINISHED_MESSAGE = "All done! :)";
-        SerialPortOptions PORT_OPTIONS = new SerialPortOptions() { BaudRate = 9600, Parity = SerialPortParity.None, StopBits = SerialPortStopBits.One };
 
         public MainPage()
         {
@@ -43,6 +43,8 @@ namespace LaunchPad
         float Step { get { return 1 / (float)SmoothSlider.Value; } }
         List<string> instructions;
         BitmapEditor bitmapEditor;
+        double currentScale = 1;
+        GXSerial cutterSerial;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -75,7 +77,7 @@ namespace LaunchPad
                     {
                         var seg = (SvgMoveToSegment)segment;
                         instructions.Add(PEN_UP_MESSAGE);
-                        instructions.Add(seg.End.ToCoordString());
+                        instructions.Add(seg.End.ToCoordString(currentScale));
                         instructions.Add(PEN_DOWN_MESSAGE);
                         currentStartPoint = seg.End;
 
@@ -83,25 +85,25 @@ namespace LaunchPad
                     else if (segment.GetType() == typeof(SvgLineSegment))
                     {
                         var seg = (SvgLineSegment)segment;
-                        instructions.Add(GetLineToPoint(seg).ToCoordString());
+                        instructions.Add(GetLineToPoint(seg).ToCoordString(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
                     {
                         var seg = (SvgQuadraticCurveSegment)segment;
                         for (float t = 0; t <= 1; t += Step)
                         {
-                            instructions.Add(GetQuadraticPoint(seg, t).ToCoordString());
+                            instructions.Add(GetQuadraticPoint(seg, t).ToCoordString(currentScale));
                         }
-                        instructions.Add(seg.End.ToCoordString());
+                        instructions.Add(seg.End.ToCoordString(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgCubicCurveSegment))
                     {
                         var seg = (SvgCubicCurveSegment)segment;
                         for (float t = 0; t <= 1; t += Step)
                         {
-                            instructions.Add(GetCubicPoint(seg, t).ToCoordString());
+                            instructions.Add(GetCubicPoint(seg, t).ToCoordString(currentScale));
                         }
-                        instructions.Add(seg.End.ToCoordString());
+                        instructions.Add(seg.End.ToCoordString(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgArcSegment))
                     {
@@ -110,9 +112,9 @@ namespace LaunchPad
                         var arcData = new CenterParameterizedArcData(seg);
                         for (float t = 0; t <= 1; t += Step)
                         {
-                            instructions.Add(GetArcPoint(arcData, t).ToCoordString());
+                            instructions.Add(GetArcPoint(arcData, t).ToCoordString(currentScale));
                         }
-                        instructions.Add(seg.End.ToCoordString());
+                        instructions.Add(seg.End.ToCoordString(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgClosePathSegment))
                     {
@@ -120,7 +122,7 @@ namespace LaunchPad
 
                         if (currentStartPoint != seg.Start) // if length back to start is not zero
                         {
-                            instructions.Add(GetClosePathPoint().ToCoordString());
+                            instructions.Add(GetClosePathPoint().ToCoordString(currentScale));
                         }
                         instructions.Add(PEN_UP_MESSAGE);
 
@@ -147,25 +149,25 @@ namespace LaunchPad
                     else if (segment.GetType() == typeof(SvgLineSegment))
                     {
                         var seg = (SvgLineSegment)segment;
-                        PreviewPoints.Last().Add(GetLineToPoint(seg).ToFoundationPoint());
+                        PreviewPoints.Last().Add(GetLineToPoint(seg).ToFoundationPoint(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
                     {
                         var seg = (SvgQuadraticCurveSegment)segment;
                         for (float t = 0; t < 1; t += Step)
                         {
-                            PreviewPoints.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint());
+                            PreviewPoints.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint(currentScale));
                         }
-                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint());
+                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgCubicCurveSegment))
                     {
                         var seg = (SvgCubicCurveSegment)segment;
                         for (float t = 0; t < 1; t += Step)
                         {
-                            PreviewPoints.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint());
+                            PreviewPoints.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint(currentScale));
                         }
-                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint());
+                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgArcSegment))
                     {
@@ -176,9 +178,9 @@ namespace LaunchPad
                         // Get Points for Polyline Approximation
                         for (float t = 0; t < 1; t += Step)
                         {
-                            PreviewPoints.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint());
+                            PreviewPoints.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint(currentScale));
                         }
-                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint());
+                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint(currentScale));
                     }
                     else if (segment.GetType() == typeof(SvgClosePathSegment))
                     {
@@ -186,7 +188,7 @@ namespace LaunchPad
 
                         if (currentStartPoint != seg.Start) // if length back to start is not zero
                         {
-                            PreviewPoints.Last().Add(GetClosePathPoint().ToFoundationPoint());
+                            PreviewPoints.Last().Add(GetClosePathPoint().ToFoundationPoint(currentScale));
                         }
                     }
                 }
@@ -196,7 +198,7 @@ namespace LaunchPad
 
         PointCollection GetMoveToPointCollection(SvgMoveToSegment seg)
         {
-            return new PointCollection() { new Windows.Foundation.Point(seg.End.X, seg.End.Y) };
+            return new PointCollection() { seg.End.ToFoundationPoint(currentScale) };
         }
 
         PointF GetLineToPoint(SvgLineSegment seg)
@@ -265,7 +267,7 @@ namespace LaunchPad
 
         private void DisplayPreview(bool[,] bwMap)
         {
-            List<Windows.UI.Xaml.Shapes.Rectangle> prevLines = GetPreviewRects(bwMap, (uint)LaminationSlider.Value);
+            List<Windows.UI.Xaml.Shapes.Rectangle> prevLines = GetPreviewRects(bwMap, (int)LaminationSlider.Value);
             PreviewCanvas.Children.Clear();
             foreach (var rect in prevLines)
             {
@@ -289,13 +291,14 @@ namespace LaunchPad
                     BitmapDecoder decoder = await BitmapDecoder.CreateAsync(stream);
                     if (decoder.BitmapPixelFormat == BitmapPixelFormat.Bgra8)
                     {
+                        FileTextBlock.Text = string.Empty;
+                        FileTextScrollView.Visibility = Visibility.Collapsed;
+                        FileTextScrollTitleBlock.Visibility = Visibility.Collapsed;
+                        SmoothSlider.Visibility = Visibility.Collapsed;
+                        PassCountSlider.Visibility = Visibility.Collapsed;
                         ThresholdSlider.Visibility = Visibility.Visible;
                         LaminationSlider.Visibility = Visibility.Visible;
                         NegativeSwitch.Visibility = Visibility.Visible;
-                        PassCountSlider.Visibility = Visibility.Collapsed;
-                        SmoothSlider.Visibility = Visibility.Collapsed;
-                        FileTextScrollTitleBlock.Visibility = Visibility.Collapsed;
-                        FileTextBlock.Visibility = Visibility.Collapsed;
                         PrintButton.IsEnabled = true;
 
                         System.Diagnostics.Debug.WriteLine(decoder.BitmapAlphaMode);
@@ -303,35 +306,34 @@ namespace LaunchPad
                         bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
                         bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
                         DisplayPreview(bwMap);
+                        instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
                     }
                 }
             }
         }
 
-        public List<Windows.UI.Xaml.Shapes.Rectangle> GetPreviewRects(bool[,] bwMap, uint lamination)
+        public List<Windows.UI.Xaml.Shapes.Rectangle> GetPreviewRects(bool[,] bwMap, int lamination)
         {
             List<Windows.UI.Xaml.Shapes.Rectangle> rects = new List<Windows.UI.Xaml.Shapes.Rectangle>();
             int width = bwMap.GetLength(0);
             int height = bwMap.GetLength(1);
-            uint lineStart;                    // Equals width when a line hasn't been started
-            uint lineEnd;
-            for (uint y = 0; y < height; y += lamination)
+            int lineStart;                    // Equals width when a line hasn't been started
+            for (int y = 0; y < height; y += lamination)
             {
-                lineStart = (uint)width;
-                lineEnd = (uint)width;
-                for (uint x = 0; x < width; x++)
+                lineStart = width;
+                for (int x = 0; x < width; x += 1)
                 {
                     if (bwMap[x, y])
                     {
-                        if(lineStart == width) // Not currenntly drawing
+                        if(lineStart == width) // Not currently drawing
                         {
                             lineStart = x;
                         }
                         else if(x == width - 1)
                         {
-                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = width - 1 - lineStart, Height = lamination };
-                            Canvas.SetTop(rect, y);
-                            Canvas.SetLeft(rect, lineStart);
+                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * currentScale, Height = lamination * currentScale };
+                            Canvas.SetTop(rect, y * currentScale);
+                            Canvas.SetLeft(rect, lineStart * currentScale);
                             rects.Add(rect);
                         }
                     }
@@ -339,17 +341,63 @@ namespace LaunchPad
                     {
                         if(lineStart != width) // Currently drawing
                         {
-                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = x - 1 - lineStart, Height = lamination };
-                            Canvas.SetTop(rect, y);
-                            Canvas.SetLeft(rect, lineStart);
+                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * currentScale, Height = lamination * currentScale };
+                            Canvas.SetTop(rect, y * currentScale);
+                            Canvas.SetLeft(rect, lineStart * currentScale);
                             rects.Add(rect);
 
-                            lineStart = (uint)width;
+                            lineStart = width;
                         }
                     }
                 }
             }
             return rects;
+        }
+
+        List<string> GetArduinoInstructions(bool[,] bwMap, int lamination)
+        {
+            List<string> instructions = new List<string>();
+            int width = bwMap.GetLength(0);
+            int height = bwMap.GetLength(1);
+            int lineStart;                    // Equals width when a line hasn't been started
+            int startingX;
+            int stepX;
+            instructions.Add(PEN_UP_MESSAGE);
+            instructions.Add("(0,0);");
+            for (int y = 0; y < height; y += lamination)
+            {
+                lineStart = width;
+                startingX = (y % 2 == 0) ? 0 : width - 1;
+                stepX = (y % 2 == 0) ? 1 : -1;
+                for (int x = startingX; (y % 2 == 0) ? x < width : x > 0; x += stepX)
+                {
+                    if (bwMap[x, y])
+                    {
+                        if (lineStart == width) // Not currenntly drawing
+                        {
+                            lineStart = x;
+                            instructions.Add($"({x * currentScale},{y * currentScale});");
+                            instructions.Add(PEN_DOWN_MESSAGE);
+                        }
+                        else if (x == width - (startingX + 1))
+                        {
+                            instructions.Add($"({x * currentScale},{y * currentScale});");
+                            instructions.Add(PEN_UP_MESSAGE);
+                        }
+                    }
+                    else
+                    {
+                        if (lineStart != width) // Currently drawing
+                        {
+                            instructions.Add($"({(x - stepX) * currentScale},{y * currentScale});");
+                            instructions.Add(PEN_UP_MESSAGE);
+
+                            lineStart = width;
+                        }
+                    }
+                }
+            }
+            return instructions;
         }
 
         private async void LoadSVGButton_Click(object sender, RoutedEventArgs e)
@@ -361,13 +409,13 @@ namespace LaunchPad
             if (imageFile != null) {
                 string imageFileString = await FileIO.ReadTextAsync(imageFile);
                 FileTextBlock.Text = imageFileString;
+                ThresholdSlider.Visibility = Visibility.Collapsed;
+                LaminationSlider.Visibility = Visibility.Collapsed;
+                NegativeSwitch.Visibility = Visibility.Collapsed;
                 FileTextScrollView.Visibility = Visibility.Visible;
                 FileTextScrollTitleBlock.Visibility = Visibility.Visible;
                 SmoothSlider.Visibility = Visibility.Visible;
                 PassCountSlider.Visibility = Visibility.Visible;
-                ThresholdSlider.Visibility = Visibility.Collapsed;
-                LaminationSlider.Visibility = Visibility.Collapsed;
-                NegativeSwitch.Visibility = Visibility.Collapsed;
                 PrintButton.IsEnabled = true;
 
                 xDoc.LoadXml(imageFileString);
@@ -391,57 +439,77 @@ namespace LaunchPad
         private async void PrintButton_Click(object sender, RoutedEventArgs e)
         {
             fullInstructions.Clear();
-            var device = (DeviceInformation)PortComboBox.SelectedItem;
-            if (instructions != null && device.Id != null)
+            //var device = (DeviceInformation)PortComboBox.SelectedItem;
+            if (instructions != null /*&& device.Id != null*/)
             {
                 for (int pass = 0; pass < PassCountSlider.Value; pass++)
                 {
                     foreach (string instruction in instructions)
                     {
                         fullInstructions.Add(instruction);
+
                     }
                 }
-
+                /*
                 System.Diagnostics.Debug.WriteLine(device.Id);
                 ManagedSerialPort cutterPort = await SerialPortFactory.CreateForDeviceIdAsync(device.Id, PORT_OPTIONS);
                 cutterPort.MessageReceived += CutterPort_MessageReceived;
                 cutterPort.Initialize();
-                System.Diagnostics.Debug.WriteLine(cutterPort.IsConnected);
+                System.Diagnostics.Debug.WriteLine(cutterPort.IsConnected);*/
             }
+            FileSavePicker fileSavePicker = new FileSavePicker
+            {
+                SuggestedFileName = "instructions.csv",
+                SuggestedStartLocation = PickerLocationId.Desktop
+            };
+            fileSavePicker.FileTypeChoices.Add("CSV", new string[] {".txt"});
+            var file = await fileSavePicker.PickSaveFileAsync();
+            await FileIO.WriteTextAsync(file, string.Join('\n', fullInstructions));
+            GXSerial gXSerial = new GXSerial("COM7") { BaudRate = 9600 };
+            gXSerial.Open();
+            gXSerial.OnReceived += GXSerial_OnReceived;
         }
 
-        private void CutterPort_MessageReceived(object sender, MessageReceivedEventArgs e)
+        private void GXSerial_OnReceived(object sender, ReceiveEventArgs e)
         {
-            string resp = Encoding.ASCII.GetString(e.Data);
+            string resp = Encoding.ASCII.GetString((byte[])e.Data);
             System.Diagnostics.Debug.WriteLine(resp);
-            ManagedSerialPort cutterPort = (ManagedSerialPort)sender;
+            GXSerial cutterSerial = (GXSerial)sender;
             if (resp == NEXT_INSTRUCTION_MESSAGE)
             {
                 if (fullInstructions.Any())
                 {
                     System.Diagnostics.Debug.WriteLine(fullInstructions.First());
                     byte[] ins = Encoding.ASCII.GetBytes(fullInstructions.First());
-                    cutterPort.Write(ins);
+                    cutterSerial.Send(ins);
                     fullInstructions.RemoveAt(0);
-
                 }
                 else
                 {
                     byte[] msg = Encoding.ASCII.GetBytes(FINISH_DRAWING_MESSAGE);
-                    cutterPort.Write(msg);
+                    cutterSerial.Send(msg);
                 }
             }
             else if (resp == DRAWING_FINISHED_MESSAGE)
-                cutterPort.Dispose();
+                cutterSerial.Dispose();
             else
                 System.Diagnostics.Debug.WriteLine("Say What: " + resp);
         }
 
-        private async void PortComboBox_DropDownOpened(object sender, object e)
+        private void PortComboBox_DropDownOpened(object sender, object e)
         {
-            var serialDevices = await DeviceInformation.FindAllAsync(SerialDevice.GetDeviceSelector());
+            var serialDevices = GXSerial.GetPortNames();
             if (serialDevices.Any())
                 PortComboBox.ItemsSource = serialDevices;
+        }
+
+        private void PortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            string selectedPort = PortComboBox.SelectedItem.ToString();
+            if (!string.IsNullOrEmpty(selectedPort))
+            {
+                cutterSerial = new GXSerial(selectedPort);
+            }
         }
 
         private void ThresholdSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -450,6 +518,7 @@ namespace LaunchPad
             {
                 bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
                 DisplayPreview(bwMap);
+                instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
             }
         }
 
@@ -459,6 +528,7 @@ namespace LaunchPad
             {
                 bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
                 DisplayPreview(bwMap);
+                instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
             }
         }
 
@@ -468,6 +538,48 @@ namespace LaunchPad
             {
                 bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
                 DisplayPreview(bwMap);
+                instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
+            }
+        }
+
+        private void ScaleTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (double.TryParse(ScaleTextBox.Text.Replace("%",""), out double newScale))
+            {
+                if (newScale > 0)
+                {
+                    currentScale = newScale / 100;
+                    if (imageFile != null)
+                    {
+                        if (PassCountSlider.Visibility == Visibility.Visible)
+                        {
+                            var paths = GetPathsFromSvg();
+                            DisplayPreview(GetPreviewPoints(paths));
+                            instructions = GetArduinoInstructions(paths);
+                        }
+                        else
+                        {
+                            bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
+                            DisplayPreview(bwMap);
+                            instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
+                        }
+                    }
+                }
+            }
+        }
+
+        private void ScaleUpButton_Click(object sender, RoutedEventArgs e)
+        {
+            currentScale += 0.1;
+            ScaleTextBox.Text = (100 * currentScale).ToString() + "%";
+        }
+
+        private void ScaleDownButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (currentScale > 0.1)
+            {
+                currentScale -= 0.1;
+                ScaleTextBox.Text = (100 * currentScale).ToString() + "%";
             }
         }
     }
@@ -552,14 +664,14 @@ namespace LaunchPad
     public static class Extensions
     { 
 
-        public static Windows.Foundation.Point ToFoundationPoint(this PointF point)
+        public static Windows.Foundation.Point ToFoundationPoint(this PointF point, double scale)
         {
-            return new Windows.Foundation.Point(point.X, point.Y);
+            return new Windows.Foundation.Point(point.X * scale, point.Y * scale);
         }
 
-        public static string ToCoordString(this PointF point)
+        public static string ToCoordString(this PointF point, double scale)
         {
-            return $"({point.X},{point.Y});";
+            return $"({point.X * scale},{point.Y * scale});";
         }
     }
 
