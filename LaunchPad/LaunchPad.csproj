@@ -152,17 +152,14 @@
     </Page>
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Gurux.Common">
-      <Version>8.1.1811.1101</Version>
-    </PackageReference>
-    <PackageReference Include="Gurux.Serial">
-      <Version>8.1.1811.1101</Version>
-    </PackageReference>
     <PackageReference Include="Microsoft.NETCore.UniversalWindowsPlatform">
       <Version>6.2.3</Version>
     </PackageReference>
+    <PackageReference Include="SerialPortLib">
+      <Version>1.0.18</Version>
+    </PackageReference>
     <PackageReference Include="Svg">
-      <Version>2.4.1</Version>
+      <Version>2.4.2</Version>
     </PackageReference>
   </ItemGroup>
   <PropertyGroup Condition=" '$(VisualStudioVersion)' == '' or '$(VisualStudioVersion)' &lt; '14.0' ">

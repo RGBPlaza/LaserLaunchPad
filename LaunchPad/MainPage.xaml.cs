@@ -16,8 +16,7 @@ using Windows.Devices.Enumeration;
 using System.Text;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
-using Gurux.Serial;
-using Gurux.Common;
+using SerialPortLib;
 
 namespace LaunchPad
 {
@@ -26,14 +25,16 @@ namespace LaunchPad
         // Constants
         const string PEN_UP_MESSAGE = "PenUp();";
         const string PEN_DOWN_MESSAGE = "PenDown();";
-        const string NEXT_INSTRUCTION_MESSAGE = "Next Please :)";
+        const string NEXT_INSTRUCTION_MESSAGE = ":)";
         const string FINISH_DRAWING_MESSAGE = "That will do, cheers bud :);";
-        const string DRAWING_FINISHED_MESSAGE = "All done! :)";
+        const string DRAWING_FINISHED_MESSAGE = "(:";
 
         public MainPage()
         {
             this.InitializeComponent();
             filePicker = new FileOpenPicker();
+            cutterSerial = new SerialPortInput();
+            cutterSerial.MessageReceived += CutterSerial_MessageReceived;
         }
 
         StorageFile imageFile;
@@ -44,7 +45,7 @@ namespace LaunchPad
         List<string> instructions;
         BitmapEditor bitmapEditor;
         double currentScale = 1;
-        GXSerial cutterSerial;
+        SerialPortInput cutterSerial;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -436,79 +437,82 @@ namespace LaunchPad
         }
 
         List<string> fullInstructions = new List<string>();
-        private async void PrintButton_Click(object sender, RoutedEventArgs e)
+        private void PrintButton_Click(object sender, RoutedEventArgs e)
         {
-            fullInstructions.Clear();
-            //var device = (DeviceInformation)PortComboBox.SelectedItem;
-            if (instructions != null /*&& device.Id != null*/)
+            if (instructions != null && cutterSerial != null)
             {
+                fullInstructions.Clear();
                 for (int pass = 0; pass < PassCountSlider.Value; pass++)
                 {
                     foreach (string instruction in instructions)
                     {
                         fullInstructions.Add(instruction);
-
                     }
                 }
-                /*
-                System.Diagnostics.Debug.WriteLine(device.Id);
-                ManagedSerialPort cutterPort = await SerialPortFactory.CreateForDeviceIdAsync(device.Id, PORT_OPTIONS);
-                cutterPort.MessageReceived += CutterPort_MessageReceived;
-                cutterPort.Initialize();
-                System.Diagnostics.Debug.WriteLine(cutterPort.IsConnected);*/
+                if (!cutterSerial.IsConnected)
+                {
+                    cutterSerial.Connect();
+                }
+                else
+                {
+                    cutterSerial.Disconnect();
+                    fullInstructions.Clear();
+                }
             }
-            FileSavePicker fileSavePicker = new FileSavePicker
-            {
-                SuggestedFileName = "instructions.csv",
-                SuggestedStartLocation = PickerLocationId.Desktop
-            };
-            fileSavePicker.FileTypeChoices.Add("CSV", new string[] {".txt"});
-            var file = await fileSavePicker.PickSaveFileAsync();
-            await FileIO.WriteTextAsync(file, string.Join('\n', fullInstructions));
-            GXSerial gXSerial = new GXSerial("COM7") { BaudRate = 9600 };
-            gXSerial.Open();
-            gXSerial.OnReceived += GXSerial_OnReceived;
         }
 
-        private void GXSerial_OnReceived(object sender, ReceiveEventArgs e)
+        private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
         {
-            string resp = Encoding.ASCII.GetString((byte[])e.Data);
+            string resp = Encoding.ASCII.GetString(e.Data);
             System.Diagnostics.Debug.WriteLine(resp);
-            GXSerial cutterSerial = (GXSerial)sender;
             if (resp == NEXT_INSTRUCTION_MESSAGE)
             {
                 if (fullInstructions.Any())
                 {
                     System.Diagnostics.Debug.WriteLine(fullInstructions.First());
                     byte[] ins = Encoding.ASCII.GetBytes(fullInstructions.First());
-                    cutterSerial.Send(ins);
+                    cutterSerial.SendMessage(ins);
                     fullInstructions.RemoveAt(0);
                 }
                 else
                 {
                     byte[] msg = Encoding.ASCII.GetBytes(FINISH_DRAWING_MESSAGE);
-                    cutterSerial.Send(msg);
+                    cutterSerial.SendMessage(msg);
                 }
             }
             else if (resp == DRAWING_FINISHED_MESSAGE)
-                cutterSerial.Dispose();
+            {
+                System.Diagnostics.Debug.WriteLine("Print Complete");
+                try
+                {
+                    cutterSerial.Disconnect();
+                }
+                catch { }
+            }
             else
+            {
                 System.Diagnostics.Debug.WriteLine("Say What: " + resp);
+            }
         }
 
-        private void PortComboBox_DropDownOpened(object sender, object e)
+        private async void PortComboBox_DropDownOpened(object sender, object e)
         {
-            var serialDevices = GXSerial.GetPortNames();
-            if (serialDevices.Any())
-                PortComboBox.ItemsSource = serialDevices;
+            //var serialDevices = GXSerial.GetPortNames();
+            //if (serialDevices.Any())
+            //    PortComboBox.ItemsSource = serialDevices;
+            string aqsFilter = SerialDevice.GetDeviceSelector();
+            var devices = await DeviceInformation.FindAllAsync(aqsFilter);
+            if (devices.Any())
+                PortComboBox.ItemsSource = devices;
         }
 
         private void PortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            string selectedPort = PortComboBox.SelectedItem.ToString();
-            if (!string.IsNullOrEmpty(selectedPort))
+            if (PortComboBox.SelectedItem != null)
             {
-                cutterSerial = new GXSerial(selectedPort);
+                DeviceInformation info = (DeviceInformation)PortComboBox.SelectedItem;
+                string portName = info.Name.Substring(info.Name.IndexOf("COM"), 4);
+                cutterSerial.SetPort(portName, 9600);
             }
         }
 
