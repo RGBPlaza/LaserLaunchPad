@@ -23,8 +23,6 @@ namespace LaunchPad
     public sealed partial class MainPage : Page
     {
         // Constants
-        const string PEN_UP_MESSAGE = "PenUp();";
-        const string PEN_DOWN_MESSAGE = "PenDown();";
         const string NEXT_INSTRUCTION_MESSAGE = ":)";
         const string FINISH_DRAWING_MESSAGE = "That will do, cheers bud :);";
         const string DRAWING_FINISHED_MESSAGE = "(:";
@@ -436,6 +434,10 @@ namespace LaunchPad
             }
         }
 
+        double posX = 0;
+        double posY = 0;
+        double destX;
+        double destY;
         List<string> fullInstructions = new List<string>();
         private void PrintButton_Click(object sender, RoutedEventArgs e)
         {
@@ -461,6 +463,14 @@ namespace LaunchPad
             }
         }
 
+        private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
+        {
+            string resp = Encoding.ASCII.GetString(e.Data);
+            System.Diagnostics.Debug.WriteLine(resp);
+            
+        }
+
+        /*
         private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
         {
             string resp = Encoding.ASCII.GetString(e.Data);
@@ -493,7 +503,7 @@ namespace LaunchPad
             {
                 System.Diagnostics.Debug.WriteLine("Say What: " + resp);
             }
-        }
+        }*/
 
         private async void PortComboBox_DropDownOpened(object sender, object e)
         {
@@ -745,6 +755,49 @@ namespace LaunchPad
             }
             return bwMap;
         }
+    }
+
+    public class CutterInstruction
+    {
+        const string PEN_UP_MESSAGE = "PenUp();";
+        const string PEN_DOWN_MESSAGE = "PenDown();";
+
+        public readonly Windows.Foundation.Point Point;
+        public readonly bool IsCoord;
+        public readonly bool PenDown;
+
+        public CutterInstruction(Windows.Foundation.Point point)
+        {
+            IsCoord = true;
+            Point = point;
+        }
+
+        public CutterInstruction(bool penDown)
+        {
+            IsCoord = false;
+            PenDown = penDown;
+        }
+
+        private double diffX, diffY, theta, vX, vY;
+        public string GetArduinoMessage(double currentX = 0, double currentY = 0)
+        {
+            string msg = string.Empty;
+            if (IsCoord)
+            {
+                diffX = Point.X - currentX;
+                diffY = Point.Y - currentY;
+                theta = Math.Atan(diffX / diffY);
+                vX = diffX > 0 ? Math.Cos(theta) : -Math.Cos(theta);
+                vY = diffY > 0 ? Math.Sin(theta) : -Math.Sin(theta);
+                msg = $"({vX},{vY});";
+            }
+            else
+            {
+                msg = PenDown ? PEN_DOWN_MESSAGE : PEN_UP_MESSAGE;
+            }
+            return msg;
+        }
+
     }
 
 }
