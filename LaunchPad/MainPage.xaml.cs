@@ -22,17 +22,14 @@ namespace LaunchPad
 {
     public sealed partial class MainPage : Page
     {
-        // Constants
-        const string NEXT_INSTRUCTION_MESSAGE = ":)";
-        const string FINISH_DRAWING_MESSAGE = "That will do, cheers bud :);";
-        const string DRAWING_FINISHED_MESSAGE = "(:";
-
         public MainPage()
         {
             this.InitializeComponent();
             filePicker = new FileOpenPicker();
             cutterSerial = new SerialPortInput();
             cutterSerial.MessageReceived += CutterSerial_MessageReceived;
+            LaserCircle = new Windows.UI.Xaml.Shapes.Ellipse() { Fill = LaserCircleFillBrush, Stroke = new SolidColorBrush(Windows.UI.Colors.DarkViolet), Width = 5, Height = 5, StrokeThickness = 0 };
+            LaserCircle.Transitions.Add(new Windows.UI.Xaml.Media.Animation.RepositionThemeTransition());
         }
 
         StorageFile imageFile;
@@ -40,10 +37,12 @@ namespace LaunchPad
         XmlDocument xDoc = new XmlDocument();
         PointF currentStartPoint;
         float Step { get { return 1 / (float)SmoothSlider.Value; } }
-        List<string> instructions;
+        List<CutterInstruction> instructions;
         BitmapEditor bitmapEditor;
         double currentScale = 1;
         SerialPortInput cutterSerial;
+        Windows.UI.Xaml.Shapes.Ellipse LaserCircle;
+        SolidColorBrush LaserCircleFillBrush = new SolidColorBrush(Windows.UI.Colors.Violet);
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -65,9 +64,9 @@ namespace LaunchPad
             return paths;
         }
 
-        List<string> GetArduinoInstructions(List<SvgPathSegmentList> paths)
+        List<CutterInstruction> GetArduinoInstructions(List<SvgPathSegmentList> paths)
         {
-            List<string> instructions = new List<string>();
+            List<CutterInstruction> instructions = new List<CutterInstruction>();
             foreach (SvgPathSegmentList path in paths)
             {
                 foreach (SvgPathSegment segment in path)
@@ -75,45 +74,44 @@ namespace LaunchPad
                     if (segment.GetType() == typeof(SvgMoveToSegment))
                     {
                         var seg = (SvgMoveToSegment)segment;
-                        instructions.Add(PEN_UP_MESSAGE);
-                        instructions.Add(seg.End.ToCoordString(currentScale));
-                        instructions.Add(PEN_DOWN_MESSAGE);
+                        instructions.Add(CutterInstruction.PenUpInstruction);
+                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
+                        instructions.Add(CutterInstruction.PenDownInstruction);
                         currentStartPoint = seg.End;
 
                     }
                     else if (segment.GetType() == typeof(SvgLineSegment))
                     {
                         var seg = (SvgLineSegment)segment;
-                        instructions.Add(GetLineToPoint(seg).ToCoordString(currentScale));
+                        instructions.Add(new CutterInstruction(GetLineToPoint(seg).ToFoundationPoint(currentScale)));
                     }
                     else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
                     {
                         var seg = (SvgQuadraticCurveSegment)segment;
                         for (float t = 0; t <= 1; t += Step)
                         {
-                            instructions.Add(GetQuadraticPoint(seg, t).ToCoordString(currentScale));
+                            instructions.Add(new CutterInstruction(GetQuadraticPoint(seg, t).ToFoundationPoint(currentScale)));
                         }
-                        instructions.Add(seg.End.ToCoordString(currentScale));
+                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
                     }
                     else if (segment.GetType() == typeof(SvgCubicCurveSegment))
                     {
                         var seg = (SvgCubicCurveSegment)segment;
                         for (float t = 0; t <= 1; t += Step)
                         {
-                            instructions.Add(GetCubicPoint(seg, t).ToCoordString(currentScale));
+                            instructions.Add(new CutterInstruction(GetCubicPoint(seg, t).ToFoundationPoint(currentScale)));
                         }
-                        instructions.Add(seg.End.ToCoordString(currentScale));
+                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
                     }
                     else if (segment.GetType() == typeof(SvgArcSegment))
                     {
                         var seg = (SvgArcSegment)segment;
-
                         var arcData = new CenterParameterizedArcData(seg);
                         for (float t = 0; t <= 1; t += Step)
                         {
-                            instructions.Add(GetArcPoint(arcData, t).ToCoordString(currentScale));
+                            instructions.Add(new CutterInstruction(GetArcPoint(arcData, t).ToFoundationPoint(currentScale)));
                         }
-                        instructions.Add(seg.End.ToCoordString(currentScale));
+                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
                     }
                     else if (segment.GetType() == typeof(SvgClosePathSegment))
                     {
@@ -121,10 +119,9 @@ namespace LaunchPad
 
                         if (currentStartPoint != seg.Start) // if length back to start is not zero
                         {
-                            instructions.Add(GetClosePathPoint().ToCoordString(currentScale));
+                            instructions.Add(new CutterInstruction(GetClosePathPoint().ToFoundationPoint(currentScale)));
                         }
-                        instructions.Add(PEN_UP_MESSAGE);
-
+                        instructions.Add(CutterInstruction.PenUpInstruction);
                     }
                 }
             }
@@ -228,7 +225,6 @@ namespace LaunchPad
 
             return point;
         }
-
 
         PointF GetArcPoint(CenterParameterizedArcData arcData, float t)
         {
@@ -353,45 +349,44 @@ namespace LaunchPad
             return rects;
         }
 
-        List<string> GetArduinoInstructions(bool[,] bwMap, int lamination)
+        List<CutterInstruction> GetArduinoInstructions(bool[,] bwMap, int lamination)
         {
-            List<string> instructions = new List<string>();
+            List<CutterInstruction> instructions = new List<CutterInstruction>();
             int width = bwMap.GetLength(0);
             int height = bwMap.GetLength(1);
-            int lineStart;                    // Equals width when a line hasn't been started
+            bool drawing;                    // Equals width when a line hasn't been started
             int startingX;
             int stepX;
-            instructions.Add(PEN_UP_MESSAGE);
-            instructions.Add("(0,0);");
+            instructions.Add(CutterInstruction.PenUpInstruction);
+            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, 0)));
             for (int y = 0; y < height; y += lamination)
             {
-                lineStart = width;
+                drawing = false;
                 startingX = (y % 2 == 0) ? 0 : width - 1;
                 stepX = (y % 2 == 0) ? 1 : -1;
                 for (int x = startingX; (y % 2 == 0) ? x < width : x > 0; x += stepX)
                 {
                     if (bwMap[x, y])
                     {
-                        if (lineStart == width) // Not currenntly drawing
+                        if (!drawing) // Not currenntly drawing
                         {
-                            lineStart = x;
-                            instructions.Add($"({x * currentScale},{y * currentScale});");
-                            instructions.Add(PEN_DOWN_MESSAGE);
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * currentScale, y * currentScale)));
+                            instructions.Add(CutterInstruction.PenDownInstruction);
+                            drawing = true;
                         }
                         else if (x == width - (startingX + 1))
                         {
-                            instructions.Add($"({x * currentScale},{y * currentScale});");
-                            instructions.Add(PEN_UP_MESSAGE);
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * currentScale, y * currentScale)));
+                            instructions.Add(CutterInstruction.PenUpInstruction);
                         }
                     }
                     else
                     {
-                        if (lineStart != width) // Currently drawing
+                        if (drawing) // Currently drawing
                         {
-                            instructions.Add($"({(x - stepX) * currentScale},{y * currentScale});");
-                            instructions.Add(PEN_UP_MESSAGE);
-
-                            lineStart = width;
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * currentScale, y * currentScale)));
+                            instructions.Add(CutterInstruction.PenUpInstruction);
+                            drawing = false;
                         }
                     }
                 }
@@ -434,11 +429,7 @@ namespace LaunchPad
             }
         }
 
-        double posX = 0;
-        double posY = 0;
-        double destX;
-        double destY;
-        List<string> fullInstructions = new List<string>();
+        List<CutterInstruction> fullInstructions = new List<CutterInstruction>();
         private void PrintButton_Click(object sender, RoutedEventArgs e)
         {
             if (instructions != null && cutterSerial != null)
@@ -446,7 +437,7 @@ namespace LaunchPad
                 fullInstructions.Clear();
                 for (int pass = 0; pass < PassCountSlider.Value; pass++)
                 {
-                    foreach (string instruction in instructions)
+                    foreach (CutterInstruction instruction in instructions)
                     {
                         fullInstructions.Add(instruction);
                     }
@@ -463,11 +454,78 @@ namespace LaunchPad
             }
         }
 
-        private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
+        double vX, vY, destX, destY = 0;
+        private async void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
         {
             string resp = Encoding.ASCII.GetString(e.Data);
             System.Diagnostics.Debug.WriteLine(resp);
             
+            var coord = resp.Substring(1,resp.Length - 2).Split(',');
+            double posX = double.Parse(coord[0]);
+            double posY = double.Parse(coord[1]);
+            bool penDown = int.Parse(coord[2]) == 1;
+
+            if (fullInstructions.Any())
+            {
+                // Update Laser Circle's Position
+                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () => {
+                    LaserCircle.StrokeThickness = penDown ? 0 : 1;
+                    Canvas.SetLeft(LaserCircle, posX - 2.5 - LaserCircle.StrokeThickness);
+                    Canvas.SetTop(LaserCircle, posY - 2.5 - LaserCircle.StrokeThickness);
+                    LaserCircle.Fill = penDown ? LaserCircleFillBrush : null;
+                    if (!PreviewCanvas.Children.Contains(LaserCircle))
+                        PreviewCanvas.Children.Add(LaserCircle);
+                });
+
+                // Check if cutter has reached destination
+                bool xArrived = (posX >= destX && !double.IsNegative(vX)) || (posX <= destX && double.IsNegative(vX));
+                bool yArrived = (posY >= destY && !double.IsNegative(vY)) || (posY <= destY && double.IsNegative(vY));
+                
+                string msg = string.Empty;
+                CutterInstruction currentInstruction = fullInstructions.First();
+                if (xArrived && yArrived) // We must send new instruction
+                {
+                    do
+                    {
+                        if (currentInstruction.IsCoord)
+                        {
+                            msg = currentInstruction.GetArduinoMessage(posX, posY, !penDown);
+                            (vX, vY) = currentInstruction.GetComponentVelocities(posX, posY, !penDown);
+                            (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
+                        }
+                        else
+                        {
+                            msg = currentInstruction.GetArduinoMessage();
+                        }
+                        fullInstructions.Remove(currentInstruction);
+                        currentInstruction = fullInstructions.First();
+                    } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
+                }
+                else if (xArrived && currentInstruction.IsCoord)
+                {
+                    msg = currentInstruction.GetArduinoMessage(destX, posY, !penDown);
+                }
+                else if(yArrived && currentInstruction.IsCoord)
+                {
+                    msg = currentInstruction.GetArduinoMessage(posX, destY, !penDown);
+                }
+                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
+            }
+            else
+            {
+                byte[] msg = Encoding.ASCII.GetBytes(CutterInstruction.PenUpInstruction.GetArduinoMessage());
+                cutterSerial.SendMessage(msg); // PenUp
+                msg = Encoding.ASCII.GetBytes(new CutterInstruction(new Windows.Foundation.Point(0, 0)).GetArduinoMessage(posX, posY, true));
+                cutterSerial.SendMessage(msg); // Return to origin
+                System.Diagnostics.Debug.WriteLine("Print Complete");
+                PreviewCanvas.Children.Remove(LaserCircle);
+                try
+                {
+                    cutterSerial.Disconnect();
+                }
+                catch { }
+            }
+
         }
 
         /*
@@ -675,7 +733,7 @@ namespace LaunchPad
         // there is no easy way to do this except convert to centre parameterization lol 
     }
 
-    public static class Extensions
+    public static class PointFExtensions
     { 
 
         public static Windows.Foundation.Point ToFoundationPoint(this PointF point, double scale)
@@ -750,7 +808,7 @@ namespace LaunchPad
                     mean = printNegative ? 255 - mean : mean;
                     //System.Diagnostics.Debug.WriteLine($"({px.R},{px.G},{px.B},{px.A}):{mean}");
                     bool isWhite = mean >= threshold && (ignoreAlpha || px.A >= threshold);
-                    bwMap[x,y] = isWhite;
+                    bwMap[x,y] = !isWhite;
                 }
             }
             return bwMap;
@@ -779,17 +837,16 @@ namespace LaunchPad
         }
 
         private double diffX, diffY, theta, vX, vY;
-        public string GetArduinoMessage(double currentX = 0, double currentY = 0)
+        public string GetArduinoMessage(double currentX = 0, double currentY = 0, bool fast = false)
         {
             string msg = string.Empty;
             if (IsCoord)
             {
-                diffX = Point.X - currentX;
-                diffY = Point.Y - currentY;
-                theta = Math.Atan(diffX / diffY);
-                vX = diffX > 0 ? Math.Cos(theta) : -Math.Cos(theta);
-                vY = diffY > 0 ? Math.Sin(theta) : -Math.Sin(theta);
-                msg = $"({vX},{vY});";
+                (vX, vY) = GetComponentVelocities(currentX, currentY, fast);
+                if (vX != 0 || vY != 0)
+                    msg = $"({vX},{vY});";
+                else
+                    return null;
             }
             else
             {
@@ -797,6 +854,48 @@ namespace LaunchPad
             }
             return msg;
         }
+
+        public (double X, double Y) GetComponentVelocities(double currentX, double currentY, bool fast)
+        {
+            diffX = Math.Round(Point.X - currentX, 4);
+            diffY = Math.Round(Point.Y - currentY, 4);
+            if (!fast)
+            {
+                if (diffX != 0 && diffY != 0)
+                {
+                    theta = Math.Atan(diffX / diffY);
+                    vX = diffX > 0 ? Math.Cos(theta) : -Math.Cos(theta);
+                    vY = diffY > 0 ? Math.Sin(theta) : -Math.Sin(theta);
+                }
+                else if (diffX != 0)    // Horizontal
+                {
+                    vX = diffX > 0 ? 1 : -1;
+                    vY = 0;
+                }
+                else if (diffY != 0)    // Vertical
+                {
+                    vX = 0;
+                    vY = diffY > 0 ? 1 : -1;
+                }
+                else                    // Same Location
+                {
+                    (vX, vY) = (0, 0);
+                }
+            }
+            else if (diffX != 0 || diffY != 0)
+            {
+                vX = diffX > 0 ? 1 : -1;
+                vY = diffY > 0 ? 1 : -1;
+            }
+            else                        // Same Location
+            {
+                (vX, vY) = (0, 0);
+            }
+            return (vX, vY);
+        }
+
+        public static readonly CutterInstruction PenUpInstruction = new CutterInstruction(false);
+        public static readonly CutterInstruction PenDownInstruction = new CutterInstruction(true);
 
     }
 
