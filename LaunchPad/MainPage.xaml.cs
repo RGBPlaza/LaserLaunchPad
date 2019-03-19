@@ -17,6 +17,7 @@ using System.Text;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using SerialPortLib;
+using System.Timers;
 
 namespace LaunchPad
 {
@@ -27,9 +28,11 @@ namespace LaunchPad
             this.InitializeComponent();
             filePicker = new FileOpenPicker();
             cutterSerial = new SerialPortInput();
-            cutterSerial.MessageReceived += CutterSerial_MessageReceived;
+            //cutterSerial.MessageReceived += CutterSerial_MessageReceived;
             LaserCircle = new Windows.UI.Xaml.Shapes.Ellipse() { Fill = LaserCircleFillBrush, Stroke = new SolidColorBrush(Windows.UI.Colors.DarkViolet), Width = 5, Height = 5, StrokeThickness = 0 };
             LaserCircle.Transitions.Add(new Windows.UI.Xaml.Media.Animation.RepositionThemeTransition());
+            //instructionTimer = new Timer() { AutoReset = false };
+            //instructionTimer.Elapsed += InstructionTimer_Elapsed;
         }
 
         StorageFile imageFile;
@@ -43,6 +46,7 @@ namespace LaunchPad
         SerialPortInput cutterSerial;
         Windows.UI.Xaml.Shapes.Ellipse LaserCircle;
         SolidColorBrush LaserCircleFillBrush = new SolidColorBrush(Windows.UI.Colors.Violet);
+        //Timer instructionTimer;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -435,72 +439,171 @@ namespace LaunchPad
             if (instructions != null && cutterSerial != null)
             {
                 fullInstructions.Clear();
-                for (int pass = 0; pass < PassCountSlider.Value; pass++)
-                {
-                    foreach (CutterInstruction instruction in instructions)
-                    {
-                        fullInstructions.Add(instruction);
-                    }
-                }
                 if (!cutterSerial.IsConnected)
                 {
+                    for (int pass = 0; pass < PassCountSlider.Value; pass++)
+                    {
+                        foreach (CutterInstruction instruction in instructions)
+                        {
+                            fullInstructions.Add(instruction);
+                        }
+                    }
+                    fullInstructions.Add(CutterInstruction.PenUpInstruction);
+                    fullInstructions.Add(CutterInstruction.ReturnToOriginInstruction);
                     cutterSerial.Connect();
+                    //instructionTimer.Interval = 1;
+                    //instructionTimer.Start();
                 }
                 else
                 {
+                    //instructionTimer.Stop();
                     cutterSerial.Disconnect();
-                    fullInstructions.Clear();
                 }
             }
         }
 
-        double vX, vY, destX, destY = 0;
-        private async void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
-        {
-            string resp = Encoding.ASCII.GetString(e.Data);
-            System.Diagnostics.Debug.WriteLine(resp);
-            
-            var coord = resp.Substring(1,resp.Length - 2).Split(',');
-            double posX = double.Parse(coord[0]);
-            double posY = double.Parse(coord[1]);
-            bool penDown = int.Parse(coord[2]) == 1;
+        double destX, destY = 0;
 
+        /*private void InstructionTimer_Elapsed(object sender, ElapsedEventArgs e)
+        {
             if (fullInstructions.Any())
             {
-                // Update Laser Circle's Position
-                await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () => {
-                    LaserCircle.StrokeThickness = penDown ? 0 : 1;
-                    Canvas.SetLeft(LaserCircle, posX - 2.5 - LaserCircle.StrokeThickness);
-                    Canvas.SetTop(LaserCircle, posY - 2.5 - LaserCircle.StrokeThickness);
-                    LaserCircle.Fill = penDown ? LaserCircleFillBrush : null;
-                    if (!PreviewCanvas.Children.Contains(LaserCircle))
-                        PreviewCanvas.Children.Add(LaserCircle);
-                });
-
-                // Check if cutter has reached destination
-                bool xArrived = (posX >= destX && !double.IsNegative(vX)) || (posX <= destX && double.IsNegative(vX));
-                bool yArrived = (posY >= destY && !double.IsNegative(vY)) || (posY <= destY && double.IsNegative(vY));
-                
                 string msg = string.Empty;
-                CutterInstruction currentInstruction = fullInstructions.First();
-                if (xArrived && yArrived) // We must send new instruction
+                double time;
+                CutterInstruction currentInstruction;
+                do
                 {
+                    currentInstruction = fullInstructions.First();
+                    if (currentInstruction.IsCoord)
+                    {
+                        msg = currentInstruction.GetArduinoMessage(destX, destY);
+                        time = currentInstruction.GetTime(destX, destY);
+                        (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
+                    }
+                    else
+                    {
+                        msg = currentInstruction.GetArduinoMessage();
+                        time = 1;
+                    }
+                    fullInstructions.Remove(currentInstruction);
+                } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
+
+                System.Diagnostics.Debug.WriteLine(msg);
+                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
+                instructionTimer.Interval = time;
+                instructionTimer.Start();
+            }
+            else
+            {
+                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
+                System.Diagnostics.Debug.WriteLine("Print Complete");
+                //PreviewCanvas.Children.Remove(LaserCircle);
+                try
+                {
+                    cutterSerial.Disconnect();
+                }
+                catch { }
+            }
+        }*/
+
+        private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
+        {
+            string resp = Encoding.ASCII.GetString(e.Data);
+            if (resp == ":)")
+            {
+                if (fullInstructions.Any())
+                {
+                    string msg = string.Empty;
+                    double time;
+                    CutterInstruction currentInstruction;
                     do
                     {
+                        currentInstruction = fullInstructions.First();
                         if (currentInstruction.IsCoord)
                         {
-                            msg = currentInstruction.GetArduinoMessage(posX, posY, !penDown);
-                            (vX, vY) = currentInstruction.GetComponentVelocities(posX, posY, !penDown);
+                            msg = currentInstruction.GetArduinoMessage(destX, destY);
+                            time = currentInstruction.GetTime(destX, destY);
                             (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
                         }
                         else
                         {
                             msg = currentInstruction.GetArduinoMessage();
+                            time = 1;
                         }
                         fullInstructions.Remove(currentInstruction);
-                        currentInstruction = fullInstructions.First();
                     } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
+
+                    System.Diagnostics.Debug.WriteLine(msg);
+                    cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
                 }
+                else
+                {
+                    cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
+                    System.Diagnostics.Debug.WriteLine("Print Complete");
+                    //PreviewCanvas.Children.Remove(LaserCircle);
+                    try
+                    {
+                        cutterSerial.Disconnect();
+                    }
+                    catch { }
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine(resp);
+            }
+        }
+
+        /*private async void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
+        {
+            try
+            {
+                string resp = Encoding.ASCII.GetString(e.Data);
+                System.Diagnostics.Debug.WriteLine(resp);
+
+                var coord = resp.Substring(1, resp.Length - 2).Split(',');
+                double posX = double.Parse(coord[0]);
+                double posY = double.Parse(coord[1]);
+                bool penDown = int.Parse(coord[2]) == 1;
+
+                if (fullInstructions.Any())
+                {
+                    // Update Laser Circle's Position
+                    await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
+                    {
+                        LaserCircle.StrokeThickness = penDown ? 0 : 1;
+                        Canvas.SetLeft(LaserCircle, posX - 5 - LaserCircle.StrokeThickness);
+                        Canvas.SetTop(LaserCircle, posY - 5 - LaserCircle.StrokeThickness);
+                        LaserCircle.Fill = penDown ? LaserCircleFillBrush : null;
+                        if (!PreviewCanvas.Children.Contains(LaserCircle))
+                            PreviewCanvas.Children.Add(LaserCircle);
+                    });
+
+                    // Check if cutter has reached destination
+                    bool xArrived = (posX >= destX && !double.IsNegative(vX)) || (posX <= destX && double.IsNegative(vX));
+                    bool yArrived = (posY >= destY && !double.IsNegative(vY)) || (posY <= destY && double.IsNegative(vY));
+
+                    string msg = string.Empty;
+                    CutterInstruction currentInstruction = fullInstructions.First();
+                    if (xArrived && yArrived) // We must send new instruction
+                    {
+                        do
+                        {
+                            if (currentInstruction.IsCoord)
+                            {
+                                msg = currentInstruction.GetArduinoMessage(destX, destY, !penDown);
+                                (vX, vY) = currentInstruction.GetComponentVelocities(destX, destY, !penDown);
+                                System.Diagnostics.Debug.WriteLine($"Velocities: ({vX},{vY})");
+                                (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
+                            }
+                            else
+                            {
+                                msg = currentInstruction.GetArduinoMessage();
+                            }
+                            fullInstructions.Remove(currentInstruction);
+                            currentInstruction = fullInstructions.First();
+                        } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
+                    }
                 else if (xArrived && currentInstruction.IsCoord)
                 {
                     msg = currentInstruction.GetArduinoMessage(destX, posY, !penDown);
@@ -509,24 +612,25 @@ namespace LaunchPad
                 {
                     msg = currentInstruction.GetArduinoMessage(posX, destY, !penDown);
                 }
-                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
-            }
-            else
-            {
-                byte[] msg = Encoding.ASCII.GetBytes(CutterInstruction.PenUpInstruction.GetArduinoMessage());
-                cutterSerial.SendMessage(msg); // PenUp
-                msg = Encoding.ASCII.GetBytes(new CutterInstruction(new Windows.Foundation.Point(0, 0)).GetArduinoMessage(posX, posY, true));
-                cutterSerial.SendMessage(msg); // Return to origin
-                System.Diagnostics.Debug.WriteLine("Print Complete");
-                PreviewCanvas.Children.Remove(LaserCircle);
-                try
-                {
-                    cutterSerial.Disconnect();
+                    cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
                 }
-                catch { }
+                else
+                {
+                    byte[] msg = Encoding.ASCII.GetBytes(CutterInstruction.PenUpInstruction.GetArduinoMessage());
+                    cutterSerial.SendMessage(msg); // PenUp
+                    msg = Encoding.ASCII.GetBytes(new CutterInstruction(new Windows.Foundation.Point(0, 0)).GetArduinoMessage(posX, posY, true));
+                    cutterSerial.SendMessage(msg); // Return to origin
+                    System.Diagnostics.Debug.WriteLine("Print Complete");
+                    PreviewCanvas.Children.Remove(LaserCircle);
+                    try
+                    {
+                        cutterSerial.Disconnect();
+                    }
+                    catch { }
+                }
             }
-
-        }
+            catch { }
+        }*/
 
         /*
         private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
@@ -819,6 +923,7 @@ namespace LaunchPad
     {
         const string PEN_UP_MESSAGE = "PenUp();";
         const string PEN_DOWN_MESSAGE = "PenDown();";
+        const double velocityConstant = 1000;
 
         public readonly Windows.Foundation.Point Point;
         public readonly bool IsCoord;
@@ -836,15 +941,16 @@ namespace LaunchPad
             PenDown = penDown;
         }
 
-        private double diffX, diffY, theta, vX, vY;
-        public string GetArduinoMessage(double currentX = 0, double currentY = 0, bool fast = false)
+        private double diffX, diffY, theta, vX, vY, t;
+        public string GetArduinoMessage(double currentX = 0, double currentY = 0)
         {
             string msg = string.Empty;
             if (IsCoord)
             {
-                (vX, vY) = GetComponentVelocities(currentX, currentY, fast);
-                if (vX != 0 || vY != 0)
-                    msg = $"({vX},{vY});";
+                (vX, vY) = GetComponentVelocities(currentX, currentY);
+                t = GetTime(currentX, currentY);
+                if (t != 0)
+                    msg = $"({vX},{vY},{t});";
                 else
                     return null;
             }
@@ -855,48 +961,45 @@ namespace LaunchPad
             return msg;
         }
 
-        public (double X, double Y) GetComponentVelocities(double currentX, double currentY, bool fast)
+        public (double, double) GetComponentVelocities(double currentX, double currentY)
         {
-            diffX = Math.Round(Point.X - currentX, 4);
-            diffY = Math.Round(Point.Y - currentY, 4);
-            if (!fast)
+            diffX = Point.X - currentX;
+            diffY = Point.Y - currentY;
+            if (diffX != 0 && diffY != 0)
             {
-                if (diffX != 0 && diffY != 0)
-                {
-                    theta = Math.Atan(diffX / diffY);
-                    vX = diffX > 0 ? Math.Cos(theta) : -Math.Cos(theta);
-                    vY = diffY > 0 ? Math.Sin(theta) : -Math.Sin(theta);
-                }
-                else if (diffX != 0)    // Horizontal
-                {
-                    vX = diffX > 0 ? 1 : -1;
-                    vY = 0;
-                }
-                else if (diffY != 0)    // Vertical
-                {
-                    vX = 0;
-                    vY = diffY > 0 ? 1 : -1;
-                }
-                else                    // Same Location
-                {
-                    (vX, vY) = (0, 0);
-                }
+                theta = Math.Atan(diffY / diffX);
+                vX = diffX > 0 ? Math.Cos(theta) : -Math.Cos(theta);
+                vY = diffY > 0 ? Math.Sin(theta) : -Math.Sin(theta);
             }
-            else if (diffX != 0 || diffY != 0)
+            else if (diffX != 0)    // Horizontal
             {
                 vX = diffX > 0 ? 1 : -1;
+                vY = 0;
+            }
+            else if (diffY != 0)    // Vertical
+            {
+                vX = 0;
                 vY = diffY > 0 ? 1 : -1;
             }
-            else                        // Same Location
+            else                    // Same Location
             {
                 (vX, vY) = (0, 0);
             }
             return (vX, vY);
         }
 
+        public double GetTime(double currentX, double currentY)
+        {
+            diffX = Point.X - currentX;
+            diffY = Point.Y - currentY;
+            double displacement = Math.Sqrt(Math.Pow(diffX, 2) + Math.Pow(diffY, 2));
+            return displacement * velocityConstant;
+        }
+
         public static readonly CutterInstruction PenUpInstruction = new CutterInstruction(false);
         public static readonly CutterInstruction PenDownInstruction = new CutterInstruction(true);
-
+        public static readonly CutterInstruction ReturnToOriginInstruction = new CutterInstruction(new Windows.Foundation.Point(0, 0));
+        public const string ZeroString = "(0,0,0);";
     }
 
 }
