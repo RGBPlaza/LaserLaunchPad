@@ -28,11 +28,25 @@ namespace LaunchPad
             this.InitializeComponent();
             filePicker = new FileOpenPicker();
             cutterSerial = new SerialPortInput();
-            //cutterSerial.MessageReceived += CutterSerial_MessageReceived;
-            LaserCircle = new Windows.UI.Xaml.Shapes.Ellipse() { Fill = LaserCircleFillBrush, Stroke = new SolidColorBrush(Windows.UI.Colors.DarkViolet), Width = 5, Height = 5, StrokeThickness = 0 };
+            cutterSerial.MessageReceived += CutterSerial_MessageReceived;
+            LaserCircle = new Windows.UI.Xaml.Shapes.Ellipse() { Fill = null, Stroke = LaserCircleBrush, Width = 8, Height = 8, StrokeThickness = 2 };
             LaserCircle.Transitions.Add(new Windows.UI.Xaml.Media.Animation.RepositionThemeTransition());
-            //instructionTimer = new Timer() { AutoReset = false };
-            //instructionTimer.Elapsed += InstructionTimer_Elapsed;
+            LaserLocationTimer = new Timer() { AutoReset = true, Interval = 10 };
+            LaserLocationTimer.Elapsed += LaserLocationTimer_Elapsed;
+            PreviewCanvas.Children.Add(LaserCircle);
+            Canvas.SetLeft(LaserCircle, -4);
+            Canvas.SetTop(LaserCircle, -4);
+        }
+
+        private async void LaserLocationTimer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            LaserX = 10 * VX;
+            LaserY = 10 * VY;
+            await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => {
+                LaserCircle.Fill = LaserOn ? LaserCircleBrush : null;
+                Canvas.SetLeft(LaserCircle, LaserX - 4);
+                Canvas.SetTop(LaserCircle, LaserY - 4);
+            });
         }
 
         StorageFile imageFile;
@@ -43,10 +57,15 @@ namespace LaunchPad
         List<CutterInstruction> instructions;
         BitmapEditor bitmapEditor;
         double currentScale = 1;
-        SerialPortInput cutterSerial;
+        static SerialPortInput cutterSerial;
         Windows.UI.Xaml.Shapes.Ellipse LaserCircle;
-        SolidColorBrush LaserCircleFillBrush = new SolidColorBrush(Windows.UI.Colors.Violet);
-        //Timer instructionTimer;
+        SolidColorBrush LaserCircleBrush = new SolidColorBrush(Windows.UI.Colors.BlueViolet);
+        Timer LaserLocationTimer;
+        double LaserX = 0;
+        double LaserY = 0;
+        bool LaserOn = false;
+        double VX = 0;
+        double VY = 0;
 
         PointF ColinearAtTime(PointF A, PointF B, float t)
         {
@@ -251,6 +270,7 @@ namespace LaunchPad
         private void DisplayPreview(List<PointCollection> previewPoints)
         {
             PreviewCanvas.Children.Clear();
+            PreviewCanvas.Children.Add(LaserCircle);
             foreach (PointCollection points in previewPoints)
             {
                 PreviewCanvas.Children.Add(new Windows.UI.Xaml.Shapes.Polyline()
@@ -324,11 +344,11 @@ namespace LaunchPad
                 {
                     if (bwMap[x, y])
                     {
-                        if(lineStart == width) // Not currently drawing
+                        if (lineStart == width) // Not currently drawing
                         {
                             lineStart = x;
                         }
-                        else if(x == width - 1)
+                        else if (x == width - 1)
                         {
                             var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * currentScale, Height = lamination * currentScale };
                             Canvas.SetTop(rect, y * currentScale);
@@ -338,7 +358,7 @@ namespace LaunchPad
                     }
                     else
                     {
-                        if(lineStart != width) // Currently drawing
+                        if (lineStart != width) // Currently drawing
                         {
                             var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * currentScale, Height = lamination * currentScale };
                             Canvas.SetTop(rect, y * currentScale);
@@ -404,7 +424,8 @@ namespace LaunchPad
             filePicker.FileTypeFilter.Add(".svg");
             filePicker.SuggestedStartLocation = PickerLocationId.Desktop;
             imageFile = await filePicker.PickSingleFileAsync();
-            if (imageFile != null) {
+            if (imageFile != null)
+            {
                 string imageFileString = await FileIO.ReadTextAsync(imageFile);
                 FileTextBlock.Text = imageFileString;
                 ThresholdSlider.Visibility = Visibility.Collapsed;
@@ -451,11 +472,13 @@ namespace LaunchPad
                     fullInstructions.Add(CutterInstruction.PenUpInstruction);
                     fullInstructions.Add(CutterInstruction.ReturnToOriginInstruction);
                     cutterSerial.Connect();
+                    LaserLocationTimer.Start();
                     //instructionTimer.Interval = 1;
                     //instructionTimer.Start();
                 }
                 else
                 {
+                    LaserLocationTimer.Stop();
                     //instructionTimer.Stop();
                     cutterSerial.Disconnect();
                 }
@@ -513,8 +536,7 @@ namespace LaunchPad
             {
                 if (fullInstructions.Any())
                 {
-                    string msg = string.Empty;
-                    double time;
+                    string msg;
                     CutterInstruction currentInstruction;
                     do
                     {
@@ -522,13 +544,15 @@ namespace LaunchPad
                         if (currentInstruction.IsCoord)
                         {
                             msg = currentInstruction.GetArduinoMessage(destX, destY);
-                            time = currentInstruction.GetTime(destX, destY);
+                            (VX, VY) = currentInstruction.GetComponentVelocities(destX, destY);
+                            (LaserX, LaserY) = (destX, destY);
                             (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
                         }
                         else
                         {
                             msg = currentInstruction.GetArduinoMessage();
-                            time = 1;
+                            LaserOn = currentInstruction.PenDown;
+                            (VX, VY) = (0, 0);
                         }
                         fullInstructions.Remove(currentInstruction);
                     } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
@@ -538,8 +562,10 @@ namespace LaunchPad
                 }
                 else
                 {
-                    cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
+                    //cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
                     System.Diagnostics.Debug.WriteLine("Print Complete");
+                    (VX, VY) = (0, 0);
+                    LaserLocationTimer.Stop();
                     //PreviewCanvas.Children.Remove(LaserCircle);
                     try
                     {
@@ -720,7 +746,7 @@ namespace LaunchPad
 
         private void ScaleTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
-            if (double.TryParse(ScaleTextBox.Text.Replace("%",""), out double newScale))
+            if (double.TryParse(ScaleTextBox.Text.Replace("%", ""), out double newScale))
             {
                 if (newScale > 0)
                 {
@@ -794,7 +820,8 @@ namespace LaunchPad
             ry = seg.RadiusY;
 
             float radius_check = (MathF.Pow(x0Prime, 2) / MathF.Pow(rx, 2)) + (MathF.Pow(y0Prime, 2) / MathF.Pow(ry, 2));
-            if (radius_check > 1) {
+            if (radius_check > 1)
+            {
                 rx *= MathF.Sqrt(radius_check);
                 ry *= MathF.Sqrt(radius_check);
             }
@@ -828,7 +855,7 @@ namespace LaunchPad
             float d = dp / dn;
             d = (d > 0) ? MathF.Min(d, 1) : MathF.Max(-1, d);
             dTheta = (ux * vy - vx * uy > 0) ? MathF.Acos(d) : -MathF.Acos(d);
-            dTheta = dTheta % (2 * MathF.PI);
+            dTheta %= (2 * MathF.PI);
             if (seg.Sweep == SvgArcSweep.Negative)
                 dTheta -= 2 * MathF.PI;
 
@@ -838,7 +865,7 @@ namespace LaunchPad
     }
 
     public static class PointFExtensions
-    { 
+    {
 
         public static Windows.Foundation.Point ToFoundationPoint(this PointF point, double scale)
         {
@@ -882,7 +909,7 @@ namespace LaunchPad
             Height = (int)height;
             this.ignoreAlpha = ignoreAlpha;
             pixels = new List<BitmapPixel>();
-            for(int i = 0; i < pixelData.Length; i += 4)
+            for (int i = 0; i < pixelData.Length; i += 4)
             {
                 pixels.Add(new BitmapPixel(pixelData[i], pixelData[i + 1], pixelData[i + 2], pixelData[i + 3]));
             }
@@ -908,11 +935,11 @@ namespace LaunchPad
                 for (int x = 0; x < Width; x++)
                 {
                     BitmapPixel px = GetPixel(x, y);
-                    uint mean = ((px.R + px.G + px.B) / 3);
-                    mean = printNegative ? 255 - mean : mean;
+                    uint mean = 255 - ((px.R + px.G + px.B) / 3);
+                    //mean = printNegative ? 255 - mean : mean;
                     //System.Diagnostics.Debug.WriteLine($"({px.R},{px.G},{px.B},{px.A}):{mean}");
                     bool isWhite = mean >= threshold && (ignoreAlpha || px.A >= threshold);
-                    bwMap[x,y] = !isWhite;
+                    bwMap[x, y] = (isWhite != printNegative);
                 }
             }
             return bwMap;
@@ -965,23 +992,13 @@ namespace LaunchPad
         {
             diffX = Point.X - currentX;
             diffY = Point.Y - currentY;
-            if (diffX != 0 && diffY != 0)
+            if (diffX != 0 || diffY != 0)
             {
-                theta = Math.Atan(diffY / diffX);
-                vX = diffX > 0 ? Math.Cos(theta) : -Math.Cos(theta);
-                vY = diffY > 0 ? Math.Sin(theta) : -Math.Sin(theta);
+                theta = Math.Atan2(diffY, diffX);
+                vX = Math.Cos(theta);
+                vY = Math.Sin(theta);
             }
-            else if (diffX != 0)    // Horizontal
-            {
-                vX = diffX > 0 ? 1 : -1;
-                vY = 0;
-            }
-            else if (diffY != 0)    // Vertical
-            {
-                vX = 0;
-                vY = diffY > 0 ? 1 : -1;
-            }
-            else                    // Same Location
+            else  // Same Location
             {
                 (vX, vY) = (0, 0);
             }
