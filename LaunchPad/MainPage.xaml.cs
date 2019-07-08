@@ -29,126 +29,23 @@ namespace LaunchPad
             filePicker = new FileOpenPicker();
             cutterSerial = new SerialPortInput();
             cutterSerial.MessageReceived += CutterSerial_MessageReceived;
-            LaserCircle = new Windows.UI.Xaml.Shapes.Ellipse() { Fill = null, Stroke = LaserCircleBrush, Width = 8, Height = 8, StrokeThickness = 2 };
-            LaserCircle.Transitions.Add(new Windows.UI.Xaml.Media.Animation.RepositionThemeTransition());
-            LaserLocationTimer = new Timer() { AutoReset = true, Interval = 10 };
-            LaserLocationTimer.Elapsed += LaserLocationTimer_Elapsed;
-            PreviewCanvas.Children.Add(LaserCircle);
-            Canvas.SetLeft(LaserCircle, -4);
-            Canvas.SetTop(LaserCircle, -4);
-        }
-
-        private async void LaserLocationTimer_Elapsed(object sender, ElapsedEventArgs e)
-        {
-            LaserX = 10 * VX;
-            LaserY = 10 * VY;
-            await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Low, () => {
-                LaserCircle.Fill = LaserOn ? LaserCircleBrush : null;
-                Canvas.SetLeft(LaserCircle, LaserX - 4);
-                Canvas.SetTop(LaserCircle, LaserY - 4);
-            });
         }
 
         StorageFile imageFile;
-        FileOpenPicker filePicker;
-        XmlDocument xDoc = new XmlDocument();
-        PointF currentStartPoint;
+        private FileOpenPicker filePicker;
         float Step { get { return 1 / (float)SmoothSlider.Value; } }
-        List<CutterInstruction> instructions;
         BitmapEditor bitmapEditor;
-        double currentScale = 1;
         static SerialPortInput cutterSerial;
-        Windows.UI.Xaml.Shapes.Ellipse LaserCircle;
-        SolidColorBrush LaserCircleBrush = new SolidColorBrush(Windows.UI.Colors.BlueViolet);
-        Timer LaserLocationTimer;
         double LaserX = 0;
         double LaserY = 0;
         bool LaserOn = false;
         double VX = 0;
         double VY = 0;
-
-        PointF ColinearAtTime(PointF A, PointF B, float t)
-        {
-            float x = ((1 - t) * A.X) + (t * B.X);
-            float y = ((1 - t) * A.Y) + (t * B.Y);
-            return new PointF(x, y);
-        }
-
-        List<SvgPathSegmentList> GetPathsFromSvg()
-        {
-            List<SvgPathSegmentList> paths = new List<SvgPathSegmentList>();
-            XmlNodeList Paths = xDoc.GetElementsByTagName("path");
-            foreach (XmlElement path in Paths)
-            {
-                string pathData = path.GetAttribute("d");
-                SvgPathSegmentList segments = SvgPathBuilder.Parse(pathData);
-                paths.Add(segments);
-            }
-            return paths;
-        }
+        List<Design> Designs = new List<Design>();
 
         List<CutterInstruction> GetArduinoInstructions(List<SvgPathSegmentList> paths)
         {
-            List<CutterInstruction> instructions = new List<CutterInstruction>();
-            foreach (SvgPathSegmentList path in paths)
-            {
-                foreach (SvgPathSegment segment in path)
-                {
-                    if (segment.GetType() == typeof(SvgMoveToSegment))
-                    {
-                        var seg = (SvgMoveToSegment)segment;
-                        instructions.Add(CutterInstruction.PenUpInstruction);
-                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
-                        instructions.Add(CutterInstruction.PenDownInstruction);
-                        currentStartPoint = seg.End;
-
-                    }
-                    else if (segment.GetType() == typeof(SvgLineSegment))
-                    {
-                        var seg = (SvgLineSegment)segment;
-                        instructions.Add(new CutterInstruction(GetLineToPoint(seg).ToFoundationPoint(currentScale)));
-                    }
-                    else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
-                    {
-                        var seg = (SvgQuadraticCurveSegment)segment;
-                        for (float t = 0; t <= 1; t += Step)
-                        {
-                            instructions.Add(new CutterInstruction(GetQuadraticPoint(seg, t).ToFoundationPoint(currentScale)));
-                        }
-                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
-                    }
-                    else if (segment.GetType() == typeof(SvgCubicCurveSegment))
-                    {
-                        var seg = (SvgCubicCurveSegment)segment;
-                        for (float t = 0; t <= 1; t += Step)
-                        {
-                            instructions.Add(new CutterInstruction(GetCubicPoint(seg, t).ToFoundationPoint(currentScale)));
-                        }
-                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
-                    }
-                    else if (segment.GetType() == typeof(SvgArcSegment))
-                    {
-                        var seg = (SvgArcSegment)segment;
-                        var arcData = new CenterParameterizedArcData(seg);
-                        for (float t = 0; t <= 1; t += Step)
-                        {
-                            instructions.Add(new CutterInstruction(GetArcPoint(arcData, t).ToFoundationPoint(currentScale)));
-                        }
-                        instructions.Add(new CutterInstruction(seg.End.ToFoundationPoint(currentScale)));
-                    }
-                    else if (segment.GetType() == typeof(SvgClosePathSegment))
-                    {
-                        var seg = (SvgClosePathSegment)segment;
-
-                        if (currentStartPoint != seg.Start) // if length back to start is not zero
-                        {
-                            instructions.Add(new CutterInstruction(GetClosePathPoint().ToFoundationPoint(currentScale)));
-                        }
-                        instructions.Add(CutterInstruction.PenUpInstruction);
-                    }
-                }
-            }
-            return instructions;
+            
         }
 
         List<PointCollection> GetPreviewPoints(List<SvgPathSegmentList> paths)
@@ -213,75 +110,6 @@ namespace LaunchPad
                 }
             }
             return PreviewPoints;
-        }
-
-        PointCollection GetMoveToPointCollection(SvgMoveToSegment seg)
-        {
-            return new PointCollection() { seg.End.ToFoundationPoint(currentScale) };
-        }
-
-        PointF GetLineToPoint(SvgLineSegment seg)
-        {
-            return seg.End;
-        }
-
-        PointF GetQuadraticPoint(SvgQuadraticCurveSegment seg, float t)
-        {
-            PointF SC = ColinearAtTime(seg.Start, seg.ControlPoint, t);
-            PointF CE = ColinearAtTime(seg.ControlPoint, seg.End, t);
-            PointF point = ColinearAtTime(SC, CE, t);
-
-            return point;
-        }
-
-        PointF GetCubicPoint(SvgCubicCurveSegment seg, float t)
-        {
-            // Intermediate Points
-            PointF SC1 = ColinearAtTime(seg.Start, seg.FirstControlPoint, t);
-            PointF C1C2 = ColinearAtTime(seg.FirstControlPoint, seg.SecondControlPoint, t);
-            PointF C2E = ColinearAtTime(seg.SecondControlPoint, seg.End, t);
-
-            // Resolve Intermediate Points (Like Quadratic)
-            PointF A = ColinearAtTime(SC1, C1C2, t);
-            PointF B = ColinearAtTime(C1C2, C2E, t);
-            PointF point = ColinearAtTime(A, B, t);
-
-            return point;
-        }
-
-        PointF GetArcPoint(CenterParameterizedArcData arcData, float t)
-        {
-            float sinA = MathF.Sin(arcData.angle);
-            float cosA = MathF.Cos(arcData.angle);
-            float theta = arcData.theta0 + (t * arcData.dTheta);
-            float sinT = MathF.Sin(theta);
-            float cosT = MathF.Cos(theta);
-            float x = (cosA * arcData.rx * cosT) - (sinA * arcData.ry * sinT) + arcData.cx;
-            float y = (sinA * arcData.rx * cosT) + (cosA * arcData.ry * sinT) + arcData.cy;
-
-            return new PointF(x, y);
-        }
-
-        PointF GetClosePathPoint()
-        {
-            return currentStartPoint;
-        }
-
-        private void DisplayPreview(List<PointCollection> previewPoints)
-        {
-            PreviewCanvas.Children.Clear();
-            PreviewCanvas.Children.Add(LaserCircle);
-            foreach (PointCollection points in previewPoints)
-            {
-                PreviewCanvas.Children.Add(new Windows.UI.Xaml.Shapes.Polyline()
-                {
-                    Stroke = new SolidColorBrush(Windows.UI.Colors.Black),
-                    StrokeThickness = 2,
-                    Width = 512,
-                    Height = 512,
-                    Points = points
-                });
-            }
         }
 
         private void DisplayPreview(bool[,] bwMap)
@@ -437,13 +265,16 @@ namespace LaunchPad
                 PassCountSlider.Visibility = Visibility.Visible;
                 PrintButton.IsEnabled = true;
 
+                XmlDocument xDoc = new XmlDocument();
                 xDoc.LoadXml(imageFileString);
-                var paths = GetPathsFromSvg();
-                DisplayPreview(GetPreviewPoints(paths));
-                instructions = GetArduinoInstructions(paths);
+                Designs.Add(new SVGDesign(xDoc));
+                UpdatePreview();
+                UpdateInstructions();
             }
         }
 
+        // TODO: smoothness for individual items
+        /*
         private void SmoothSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
         {
             if (imageFile != null)
@@ -452,7 +283,7 @@ namespace LaunchPad
                 DisplayPreview(GetPreviewPoints(paths));
                 instructions = GetArduinoInstructions(paths);
             }
-        }
+        }*/
 
         List<CutterInstruction> fullInstructions = new List<CutterInstruction>();
         private void PrintButton_Click(object sender, RoutedEventArgs e)
@@ -472,62 +303,11 @@ namespace LaunchPad
                     fullInstructions.Add(CutterInstruction.PenUpInstruction);
                     fullInstructions.Add(CutterInstruction.ReturnToOriginInstruction);
                     cutterSerial.Connect();
-                    LaserLocationTimer.Start();
-                    //instructionTimer.Interval = 1;
-                    //instructionTimer.Start();
-                }
-                else
-                {
-                    LaserLocationTimer.Stop();
-                    //instructionTimer.Stop();
-                    cutterSerial.Disconnect();
                 }
             }
         }
 
         double destX, destY = 0;
-
-        /*private void InstructionTimer_Elapsed(object sender, ElapsedEventArgs e)
-        {
-            if (fullInstructions.Any())
-            {
-                string msg = string.Empty;
-                double time;
-                CutterInstruction currentInstruction;
-                do
-                {
-                    currentInstruction = fullInstructions.First();
-                    if (currentInstruction.IsCoord)
-                    {
-                        msg = currentInstruction.GetArduinoMessage(destX, destY);
-                        time = currentInstruction.GetTime(destX, destY);
-                        (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
-                    }
-                    else
-                    {
-                        msg = currentInstruction.GetArduinoMessage();
-                        time = 1;
-                    }
-                    fullInstructions.Remove(currentInstruction);
-                } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
-
-                System.Diagnostics.Debug.WriteLine(msg);
-                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
-                instructionTimer.Interval = time;
-                instructionTimer.Start();
-            }
-            else
-            {
-                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
-                System.Diagnostics.Debug.WriteLine("Print Complete");
-                //PreviewCanvas.Children.Remove(LaserCircle);
-                try
-                {
-                    cutterSerial.Disconnect();
-                }
-                catch { }
-            }
-        }*/
 
         private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
         {
@@ -565,13 +345,6 @@ namespace LaunchPad
                     //cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
                     System.Diagnostics.Debug.WriteLine("Print Complete");
                     (VX, VY) = (0, 0);
-                    LaserLocationTimer.Stop();
-                    //PreviewCanvas.Children.Remove(LaserCircle);
-                    try
-                    {
-                        cutterSerial.Disconnect();
-                    }
-                    catch { }
                 }
             }
             else
@@ -580,124 +353,8 @@ namespace LaunchPad
             }
         }
 
-        /*private async void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
-        {
-            try
-            {
-                string resp = Encoding.ASCII.GetString(e.Data);
-                System.Diagnostics.Debug.WriteLine(resp);
-
-                var coord = resp.Substring(1, resp.Length - 2).Split(',');
-                double posX = double.Parse(coord[0]);
-                double posY = double.Parse(coord[1]);
-                bool penDown = int.Parse(coord[2]) == 1;
-
-                if (fullInstructions.Any())
-                {
-                    // Update Laser Circle's Position
-                    await Dispatcher.RunAsync(Windows.UI.Core.CoreDispatcherPriority.Normal, () =>
-                    {
-                        LaserCircle.StrokeThickness = penDown ? 0 : 1;
-                        Canvas.SetLeft(LaserCircle, posX - 5 - LaserCircle.StrokeThickness);
-                        Canvas.SetTop(LaserCircle, posY - 5 - LaserCircle.StrokeThickness);
-                        LaserCircle.Fill = penDown ? LaserCircleFillBrush : null;
-                        if (!PreviewCanvas.Children.Contains(LaserCircle))
-                            PreviewCanvas.Children.Add(LaserCircle);
-                    });
-
-                    // Check if cutter has reached destination
-                    bool xArrived = (posX >= destX && !double.IsNegative(vX)) || (posX <= destX && double.IsNegative(vX));
-                    bool yArrived = (posY >= destY && !double.IsNegative(vY)) || (posY <= destY && double.IsNegative(vY));
-
-                    string msg = string.Empty;
-                    CutterInstruction currentInstruction = fullInstructions.First();
-                    if (xArrived && yArrived) // We must send new instruction
-                    {
-                        do
-                        {
-                            if (currentInstruction.IsCoord)
-                            {
-                                msg = currentInstruction.GetArduinoMessage(destX, destY, !penDown);
-                                (vX, vY) = currentInstruction.GetComponentVelocities(destX, destY, !penDown);
-                                System.Diagnostics.Debug.WriteLine($"Velocities: ({vX},{vY})");
-                                (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
-                            }
-                            else
-                            {
-                                msg = currentInstruction.GetArduinoMessage();
-                            }
-                            fullInstructions.Remove(currentInstruction);
-                            currentInstruction = fullInstructions.First();
-                        } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
-                    }
-                else if (xArrived && currentInstruction.IsCoord)
-                {
-                    msg = currentInstruction.GetArduinoMessage(destX, posY, !penDown);
-                }
-                else if(yArrived && currentInstruction.IsCoord)
-                {
-                    msg = currentInstruction.GetArduinoMessage(posX, destY, !penDown);
-                }
-                    cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
-                }
-                else
-                {
-                    byte[] msg = Encoding.ASCII.GetBytes(CutterInstruction.PenUpInstruction.GetArduinoMessage());
-                    cutterSerial.SendMessage(msg); // PenUp
-                    msg = Encoding.ASCII.GetBytes(new CutterInstruction(new Windows.Foundation.Point(0, 0)).GetArduinoMessage(posX, posY, true));
-                    cutterSerial.SendMessage(msg); // Return to origin
-                    System.Diagnostics.Debug.WriteLine("Print Complete");
-                    PreviewCanvas.Children.Remove(LaserCircle);
-                    try
-                    {
-                        cutterSerial.Disconnect();
-                    }
-                    catch { }
-                }
-            }
-            catch { }
-        }*/
-
-        /*
-        private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
-        {
-            string resp = Encoding.ASCII.GetString(e.Data);
-            System.Diagnostics.Debug.WriteLine(resp);
-            if (resp == NEXT_INSTRUCTION_MESSAGE)
-            {
-                if (fullInstructions.Any())
-                {
-                    System.Diagnostics.Debug.WriteLine(fullInstructions.First());
-                    byte[] ins = Encoding.ASCII.GetBytes(fullInstructions.First());
-                    cutterSerial.SendMessage(ins);
-                    fullInstructions.RemoveAt(0);
-                }
-                else
-                {
-                    byte[] msg = Encoding.ASCII.GetBytes(FINISH_DRAWING_MESSAGE);
-                    cutterSerial.SendMessage(msg);
-                }
-            }
-            else if (resp == DRAWING_FINISHED_MESSAGE)
-            {
-                System.Diagnostics.Debug.WriteLine("Print Complete");
-                try
-                {
-                    cutterSerial.Disconnect();
-                }
-                catch { }
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("Say What: " + resp);
-            }
-        }*/
-
         private async void PortComboBox_DropDownOpened(object sender, object e)
         {
-            //var serialDevices = GXSerial.GetPortNames();
-            //if (serialDevices.Any())
-            //    PortComboBox.ItemsSource = serialDevices;
             string aqsFilter = SerialDevice.GetDeviceSelector();
             var devices = await DeviceInformation.FindAllAsync(aqsFilter);
             if (devices.Any())
@@ -714,6 +371,7 @@ namespace LaunchPad
             }
         }
 
+        /*
         private void ThresholdSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
         {
             if (bitmapEditor != null)
@@ -742,8 +400,8 @@ namespace LaunchPad
                 DisplayPreview(bwMap);
                 instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
             }
-        }
-
+        }*/
+        /*
         private void ScaleTextBox_TextChanged(object sender, TextChangedEventArgs e)
         {
             if (double.TryParse(ScaleTextBox.Text.Replace("%", ""), out double newScale))
@@ -768,8 +426,8 @@ namespace LaunchPad
                     }
                 }
             }
-        }
-
+        }*/
+        /*
         private void ScaleUpButton_Click(object sender, RoutedEventArgs e)
         {
             currentScale += 0.1;
@@ -783,7 +441,7 @@ namespace LaunchPad
                 currentScale -= 0.1;
                 ScaleTextBox.Text = (100 * currentScale).ToString() + "%";
             }
-        }
+        }*/
     }
 
     public class CenterParameterizedArcData
@@ -943,6 +601,199 @@ namespace LaunchPad
                 }
             }
             return bwMap;
+        }
+    }
+
+    public abstract class Design
+    {
+        private double x;
+        private double y;
+        private double width;
+        private double height;
+
+        public double Height { get => height; set => height = value; }
+        public double X { get => x; set => x = value; }
+        public double Y { get => y; set => y = value; }
+        public double Width { get => width; set => width = value; }
+
+        public abstract List<CutterInstruction> GetArduinoInstructions();
+
+        public abstract Border GetPreviewElement();
+    }
+
+    public class SVGDesign : Design
+    {
+        public SVGDesign(XmlDocument xDoc)
+        {
+            paths = new List<SvgPathSegmentList>();
+            points = new List<PointCollection>();
+            XmlNodeList Paths = xDoc.GetElementsByTagName("path");
+            foreach (XmlElement path in Paths)
+            {
+                string pathData = path.GetAttribute("d");
+                SvgPathSegmentList segments = SvgPathBuilder.Parse(pathData);
+                paths.Add(segments);
+            }
+            UpdatePoints();
+        }
+
+        private List<SvgPathSegmentList> paths;
+        private double scale = 1;
+        private float step = 1;
+        private List<PointCollection> points;
+
+        private void UpdatePoints()
+        {
+            foreach (SvgPathSegmentList path in paths)
+            {
+                foreach (SvgPathSegment segment in path)
+                {
+                    if (segment.GetType() == typeof(SvgMoveToSegment))
+                    {
+                        var seg = (SvgMoveToSegment)segment;
+                        points.Add(GetMoveToPointCollection(seg));
+
+                    }
+                    else if (segment.GetType() == typeof(SvgLineSegment))
+                    {
+                        var seg = (SvgLineSegment)segment;
+                        points.Last().Add(GetLineToPoint(seg).ToFoundationPoint(scale));
+                    }
+                    else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
+                    {
+                        var seg = (SvgQuadraticCurveSegment)segment;
+                        for (float t = 0; t < 1; t += step)
+                        {
+                            points.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint(scale));
+                        }
+                        points.Last().Add(seg.End.ToFoundationPoint(scale));
+                    }
+                    else if (segment.GetType() == typeof(SvgCubicCurveSegment))
+                    {
+                        var seg = (SvgCubicCurveSegment)segment;
+                        for (float t = 0; t < 1; t += step)
+                        {
+                            points.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint(scale));
+                        }
+                        points.Last().Add(seg.End.ToFoundationPoint(scale));
+                    }
+                    else if (segment.GetType() == typeof(SvgArcSegment))
+                    {
+                        var seg = (SvgArcSegment)segment;
+                        var arcData = new CenterParameterizedArcData(seg);
+                        System.Diagnostics.Debug.WriteLine(seg.Size);
+                        System.Diagnostics.Debug.WriteLine($"Centre ({arcData.cx},{arcData.cy}), Radius ({arcData.rx},{arcData.ry})");
+                        // Get Points for Polyline Approximation
+                        for (float t = 0; t < 1; t += step)
+                        {
+                            points.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint(scale));
+                        }
+                        points.Last().Add(seg.End.ToFoundationPoint(scale));
+                    }
+                    else if (segment.GetType() == typeof(SvgClosePathSegment))
+                    {
+                        var seg = (SvgClosePathSegment)segment;
+
+                        if (points.Last().First() != seg.Start.ToFoundationPoint(scale)) // if length back to start is not zero
+                        {
+                            points.Last().Add(GetClosePathPoint().ToFoundationPoint(scale));
+                        }
+                    }
+                }
+            }
+        }
+
+        public override List<CutterInstruction> GetArduinoInstructions()
+        {
+            List<CutterInstruction> instructions = new List<CutterInstruction> { CutterInstruction.PenUpInstruction };
+            foreach (PointCollection pointCollection in points)
+            {
+                instructions.Add(new CutterInstruction(pointCollection.First()));
+                instructions.Add(CutterInstruction.PenDownInstruction);
+                for (int i = 1; i < pointCollection.Count; i++)
+                    instructions.Add(new CutterInstruction(pointCollection[i]));
+                instructions.Add(CutterInstruction.PenUpInstruction);
+            }
+            return instructions;
+        }
+
+        public override Border GetPreviewElement()
+        {
+            Canvas canvas = new Canvas();
+            
+            foreach(PointCollection pointCollection in points)
+            {
+                canvas.Children.Add(new Windows.UI.Xaml.Shapes.Polyline()
+                {
+                    Stroke = new SolidColorBrush(Windows.UI.Colors.Black),
+                    StrokeThickness = 2,
+                    Width = 512,
+                    Height = 512,
+                    Points = pointCollection
+                });
+            }
+
+            return new Border() { Child = canvas };
+        }
+
+        private PointF ColinearAtTime(PointF A, PointF B, float t)
+        {
+            float x = ((1 - t) * A.X) + (t * B.X);
+            float y = ((1 - t) * A.Y) + (t * B.Y);
+            return new PointF(x, y);
+        }
+
+        private PointCollection GetMoveToPointCollection(SvgMoveToSegment seg)
+        {
+            return new PointCollection() { seg.End.ToFoundationPoint(scale) };
+        }
+
+        private PointF GetLineToPoint(SvgLineSegment seg)
+        {
+            return seg.End;
+        }
+
+        private PointF GetQuadraticPoint(SvgQuadraticCurveSegment seg, float t)
+        {
+            PointF SC = ColinearAtTime(seg.Start, seg.ControlPoint, t);
+            PointF CE = ColinearAtTime(seg.ControlPoint, seg.End, t);
+            PointF point = ColinearAtTime(SC, CE, t);
+
+            return point;
+        }
+
+        private PointF GetCubicPoint(SvgCubicCurveSegment seg, float t)
+        {
+            // Intermediate Points
+            PointF SC1 = ColinearAtTime(seg.Start, seg.FirstControlPoint, t);
+            PointF C1C2 = ColinearAtTime(seg.FirstControlPoint, seg.SecondControlPoint, t);
+            PointF C2E = ColinearAtTime(seg.SecondControlPoint, seg.End, t);
+
+            // Resolve Intermediate Points (Like Quadratic)
+            PointF A = ColinearAtTime(SC1, C1C2, t);
+            PointF B = ColinearAtTime(C1C2, C2E, t);
+            PointF point = ColinearAtTime(A, B, t);
+
+            return point;
+        }
+
+        private PointF GetArcPoint(CenterParameterizedArcData arcData, float t)
+        {
+            float sinA = MathF.Sin(arcData.angle);
+            float cosA = MathF.Cos(arcData.angle);
+            float theta = arcData.theta0 + (t * arcData.dTheta);
+            float sinT = MathF.Sin(theta);
+            float cosT = MathF.Cos(theta);
+            float x = (cosA * arcData.rx * cosT) - (sinA * arcData.ry * sinT) + arcData.cx;
+            float y = (sinA * arcData.rx * cosT) + (cosA * arcData.ry * sinT) + arcData.cy;
+
+            return new PointF(x, y);
+        }
+
+        private PointF GetClosePathPoint()
+        {
+            var p = points.Last().First();
+            return new PointF((float)p.X, (float)p.Y);
         }
     }
 
