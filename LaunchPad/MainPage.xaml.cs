@@ -27,90 +27,21 @@ namespace LaunchPad
         {
             this.InitializeComponent();
             filePicker = new FileOpenPicker();
+            designs = new List<Design>();
             cutterSerial = new SerialPortInput();
             cutterSerial.MessageReceived += CutterSerial_MessageReceived;
         }
 
-        StorageFile imageFile;
-        private FileOpenPicker filePicker;
-        float Step { get { return 1 / (float)SmoothSlider.Value; } }
-        BitmapEditor bitmapEditor;
-        static SerialPortInput cutterSerial;
+        private StorageFile imageFile;
+        private readonly FileOpenPicker filePicker;
+        private readonly List<Design> designs;
+        private static SerialPortInput cutterSerial;
+
         double LaserX = 0;
         double LaserY = 0;
         bool LaserOn = false;
         double VX = 0;
         double VY = 0;
-        List<Design> Designs = new List<Design>();
-
-        List<CutterInstruction> GetArduinoInstructions(List<SvgPathSegmentList> paths)
-        {
-            
-        }
-
-        List<PointCollection> GetPreviewPoints(List<SvgPathSegmentList> paths)
-        {
-            List<PointCollection> PreviewPoints = new List<PointCollection>();
-            foreach (SvgPathSegmentList path in paths)
-            {
-                foreach (SvgPathSegment segment in path)
-                {
-                    if (segment.GetType() == typeof(SvgMoveToSegment))
-                    {
-                        var seg = (SvgMoveToSegment)segment;
-                        currentStartPoint = seg.End;
-                        PreviewPoints.Add(GetMoveToPointCollection(seg));
-
-                    }
-                    else if (segment.GetType() == typeof(SvgLineSegment))
-                    {
-                        var seg = (SvgLineSegment)segment;
-                        PreviewPoints.Last().Add(GetLineToPoint(seg).ToFoundationPoint(currentScale));
-                    }
-                    else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
-                    {
-                        var seg = (SvgQuadraticCurveSegment)segment;
-                        for (float t = 0; t < 1; t += Step)
-                        {
-                            PreviewPoints.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint(currentScale));
-                        }
-                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint(currentScale));
-                    }
-                    else if (segment.GetType() == typeof(SvgCubicCurveSegment))
-                    {
-                        var seg = (SvgCubicCurveSegment)segment;
-                        for (float t = 0; t < 1; t += Step)
-                        {
-                            PreviewPoints.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint(currentScale));
-                        }
-                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint(currentScale));
-                    }
-                    else if (segment.GetType() == typeof(SvgArcSegment))
-                    {
-                        var seg = (SvgArcSegment)segment;
-                        var arcData = new CenterParameterizedArcData(seg);
-                        System.Diagnostics.Debug.WriteLine(seg.Size);
-                        System.Diagnostics.Debug.WriteLine($"Centre ({arcData.cx},{arcData.cy}), Radius ({arcData.rx},{arcData.ry})");
-                        // Get Points for Polyline Approximation
-                        for (float t = 0; t < 1; t += Step)
-                        {
-                            PreviewPoints.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint(currentScale));
-                        }
-                        PreviewPoints.Last().Add(seg.End.ToFoundationPoint(currentScale));
-                    }
-                    else if (segment.GetType() == typeof(SvgClosePathSegment))
-                    {
-                        var seg = (SvgClosePathSegment)segment;
-
-                        if (currentStartPoint != seg.Start) // if length back to start is not zero
-                        {
-                            PreviewPoints.Last().Add(GetClosePathPoint().ToFoundationPoint(currentScale));
-                        }
-                    }
-                }
-            }
-            return PreviewPoints;
-        }
 
         private void DisplayPreview(bool[,] bwMap)
         {
@@ -148,12 +79,9 @@ namespace LaunchPad
                         NegativeSwitch.Visibility = Visibility.Visible;
                         PrintButton.IsEnabled = true;
 
-                        System.Diagnostics.Debug.WriteLine(decoder.BitmapAlphaMode);
-                        PixelDataProvider pixelData = await decoder.GetPixelDataAsync();
-                        bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
-                        bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
-                        DisplayPreview(bwMap);
-                        instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
+                        designs.Add(new BitmapDesign(decoder));
+                        UpdatePreview();
+                        UpdateInstructions();
                     }
                 }
             }
@@ -161,89 +89,8 @@ namespace LaunchPad
 
         public List<Windows.UI.Xaml.Shapes.Rectangle> GetPreviewRects(bool[,] bwMap, int lamination)
         {
-            List<Windows.UI.Xaml.Shapes.Rectangle> rects = new List<Windows.UI.Xaml.Shapes.Rectangle>();
-            int width = bwMap.GetLength(0);
-            int height = bwMap.GetLength(1);
-            int lineStart;                    // Equals width when a line hasn't been started
-            for (int y = 0; y < height; y += lamination)
-            {
-                lineStart = width;
-                for (int x = 0; x < width; x += 1)
-                {
-                    if (bwMap[x, y])
-                    {
-                        if (lineStart == width) // Not currently drawing
-                        {
-                            lineStart = x;
-                        }
-                        else if (x == width - 1)
-                        {
-                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * currentScale, Height = lamination * currentScale };
-                            Canvas.SetTop(rect, y * currentScale);
-                            Canvas.SetLeft(rect, lineStart * currentScale);
-                            rects.Add(rect);
-                        }
-                    }
-                    else
-                    {
-                        if (lineStart != width) // Currently drawing
-                        {
-                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * currentScale, Height = lamination * currentScale };
-                            Canvas.SetTop(rect, y * currentScale);
-                            Canvas.SetLeft(rect, lineStart * currentScale);
-                            rects.Add(rect);
-
-                            lineStart = width;
-                        }
-                    }
-                }
-            }
+            
             return rects;
-        }
-
-        List<CutterInstruction> GetArduinoInstructions(bool[,] bwMap, int lamination)
-        {
-            List<CutterInstruction> instructions = new List<CutterInstruction>();
-            int width = bwMap.GetLength(0);
-            int height = bwMap.GetLength(1);
-            bool drawing;                    // Equals width when a line hasn't been started
-            int startingX;
-            int stepX;
-            instructions.Add(CutterInstruction.PenUpInstruction);
-            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, 0)));
-            for (int y = 0; y < height; y += lamination)
-            {
-                drawing = false;
-                startingX = (y % 2 == 0) ? 0 : width - 1;
-                stepX = (y % 2 == 0) ? 1 : -1;
-                for (int x = startingX; (y % 2 == 0) ? x < width : x > 0; x += stepX)
-                {
-                    if (bwMap[x, y])
-                    {
-                        if (!drawing) // Not currenntly drawing
-                        {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * currentScale, y * currentScale)));
-                            instructions.Add(CutterInstruction.PenDownInstruction);
-                            drawing = true;
-                        }
-                        else if (x == width - (startingX + 1))
-                        {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * currentScale, y * currentScale)));
-                            instructions.Add(CutterInstruction.PenUpInstruction);
-                        }
-                    }
-                    else
-                    {
-                        if (drawing) // Currently drawing
-                        {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * currentScale, y * currentScale)));
-                            instructions.Add(CutterInstruction.PenUpInstruction);
-                            drawing = false;
-                        }
-                    }
-                }
-            }
-            return instructions;
         }
 
         private async void LoadSVGButton_Click(object sender, RoutedEventArgs e)
@@ -267,7 +114,7 @@ namespace LaunchPad
 
                 XmlDocument xDoc = new XmlDocument();
                 xDoc.LoadXml(imageFileString);
-                Designs.Add(new SVGDesign(xDoc));
+                designs.Add(new SVGDesign(xDoc));
                 UpdatePreview();
                 UpdateInstructions();
             }
@@ -524,7 +371,6 @@ namespace LaunchPad
 
     public static class PointFExtensions
     {
-
         public static Windows.Foundation.Point ToFoundationPoint(this PointF point, double scale)
         {
             return new Windows.Foundation.Point(point.X * scale, point.Y * scale);
@@ -606,15 +452,12 @@ namespace LaunchPad
 
     public abstract class Design
     {
-        private double x;
-        private double y;
-        private double width;
-        private double height;
-
-        public double Height { get => height; set => height = value; }
-        public double X { get => x; set => x = value; }
-        public double Y { get => y; set => y = value; }
-        public double Width { get => width; set => width = value; }
+        public double Width { get; set; }
+        public double Height { get; set; }
+        public double X { get; set; } = 0;
+        public double Y { get; set; } = 0;
+        public double Scale { get; set; } = 1;
+        public double LaserPower { get; set; } = 128;
 
         public abstract List<CutterInstruction> GetArduinoInstructions();
 
@@ -638,8 +481,8 @@ namespace LaunchPad
         }
 
         private List<SvgPathSegmentList> paths;
-        private double scale = 1;
         private float step = 1;
+        private int passes = 1;
         private List<PointCollection> points;
 
         private void UpdatePoints()
@@ -651,31 +494,30 @@ namespace LaunchPad
                     if (segment.GetType() == typeof(SvgMoveToSegment))
                     {
                         var seg = (SvgMoveToSegment)segment;
-                        points.Add(GetMoveToPointCollection(seg));
-
+                        points.Add(GetMoveToPointCollection(seg, Scale));
                     }
                     else if (segment.GetType() == typeof(SvgLineSegment))
                     {
                         var seg = (SvgLineSegment)segment;
-                        points.Last().Add(GetLineToPoint(seg).ToFoundationPoint(scale));
+                        points.Last().Add(GetLineToPoint(seg).ToFoundationPoint(Scale));
                     }
                     else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
                     {
                         var seg = (SvgQuadraticCurveSegment)segment;
                         for (float t = 0; t < 1; t += step)
                         {
-                            points.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint(scale));
+                            points.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint(Scale));
                         }
-                        points.Last().Add(seg.End.ToFoundationPoint(scale));
+                        points.Last().Add(seg.End.ToFoundationPoint(Scale));
                     }
                     else if (segment.GetType() == typeof(SvgCubicCurveSegment))
                     {
                         var seg = (SvgCubicCurveSegment)segment;
                         for (float t = 0; t < 1; t += step)
                         {
-                            points.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint(scale));
+                            points.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint(Scale));
                         }
-                        points.Last().Add(seg.End.ToFoundationPoint(scale));
+                        points.Last().Add(seg.End.ToFoundationPoint(Scale));
                     }
                     else if (segment.GetType() == typeof(SvgArcSegment))
                     {
@@ -686,17 +528,17 @@ namespace LaunchPad
                         // Get Points for Polyline Approximation
                         for (float t = 0; t < 1; t += step)
                         {
-                            points.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint(scale));
+                            points.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint(Scale));
                         }
-                        points.Last().Add(seg.End.ToFoundationPoint(scale));
+                        points.Last().Add(seg.End.ToFoundationPoint(Scale));
                     }
                     else if (segment.GetType() == typeof(SvgClosePathSegment))
                     {
                         var seg = (SvgClosePathSegment)segment;
 
-                        if (points.Last().First() != seg.Start.ToFoundationPoint(scale)) // if length back to start is not zero
+                        if (points.Last().First() != seg.Start.ToFoundationPoint(Scale)) // if length back to start is not zero
                         {
-                            points.Last().Add(GetClosePathPoint().ToFoundationPoint(scale));
+                            points.Last().Add(GetClosePathPoint().ToFoundationPoint(Scale));
                         }
                     }
                 }
@@ -733,7 +575,7 @@ namespace LaunchPad
                 });
             }
 
-            return new Border() { Child = canvas };
+            return new Border() { Child = canvas, Width = Scale * Width, Height = Scale * Height };
         }
 
         private PointF ColinearAtTime(PointF A, PointF B, float t)
@@ -743,7 +585,7 @@ namespace LaunchPad
             return new PointF(x, y);
         }
 
-        private PointCollection GetMoveToPointCollection(SvgMoveToSegment seg)
+        private PointCollection GetMoveToPointCollection(SvgMoveToSegment seg, double scale)
         {
             return new PointCollection() { seg.End.ToFoundationPoint(scale) };
         }
@@ -794,6 +636,119 @@ namespace LaunchPad
         {
             var p = points.Last().First();
             return new PointF((float)p.X, (float)p.Y);
+        }
+    }
+
+    public class BitmapDesign : Design
+    {
+        public BitmapDesign(BitmapDecoder decoder)
+        {
+            this.decoder = decoder;
+            UpdateBWMap();
+        }
+
+        private readonly BitmapDecoder decoder;
+        private BitmapEditor bitmapEditor;
+        private uint threshold = 128;
+        private bool isNegative = false;
+        private bool[,] bwMap;
+
+        public uint Threshold { get => threshold; set { threshold = value; UpdateBWMap(); } }
+        public bool InNegative { get => isNegative; set { isNegative = value; UpdateBWMap(); } }
+
+        private async void UpdateBWMap()
+        {
+            PixelDataProvider pixelData = await decoder.GetPixelDataAsync();
+            bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
+            bwMap = bitmapEditor.GetBWMap(threshold, isNegative);
+            
+        }
+
+        public override List<CutterInstruction> GetArduinoInstructions()
+        {
+            List<CutterInstruction> instructions = new List<CutterInstruction>();
+            int width = bwMap.GetLength(0);
+            int height = bwMap.GetLength(1);
+            bool drawing;
+            int startingX;
+            int stepX;
+            instructions.Add(CutterInstruction.PenUpInstruction);
+            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, 0)));
+            for (int y = 0; y < height; y ++)
+            {
+                drawing = false;
+                startingX = (y % 2 == 0) ? 0 : width - 1;
+                stepX = (y % 2 == 0) ? 1 : -1;
+                for (int x = startingX; (y % 2 == 0) ? x < width : x > 0; x += stepX)
+                {
+                    if (bwMap[x, y])
+                    {
+                        if (!drawing) // Not currenntly drawing
+                        {
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * Scale, y * Scale)));
+                            instructions.Add(CutterInstruction.PenDownInstruction);
+                            drawing = true;
+                        }
+                        else if (x == width - (startingX + 1))
+                        {
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * Scale, y * Scale)));
+                            instructions.Add(CutterInstruction.PenUpInstruction);
+                        }
+                    }
+                    else
+                    {
+                        if (drawing) // Currently drawing
+                        {
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * Scale, y * Scale)));
+                            instructions.Add(CutterInstruction.PenUpInstruction);
+                            drawing = false;
+                        }
+                    }
+                }
+            }
+            return instructions;
+        }
+
+        public override Border GetPreviewElement()
+        {
+            Canvas canvas = new Canvas();
+            int width = bwMap.GetLength(0);
+            int height = bwMap.GetLength(1);
+            int lineStart;                    // Equals width when a line hasn't been started
+            for (int y = 0; y < height; y++)
+            {
+                lineStart = width;
+                for (int x = 0; x < width; x += 1)
+                {
+                    if (bwMap[x, y])
+                    {
+                        if (lineStart == width) // Not currently drawing
+                        {
+                            lineStart = x;
+                        }
+                        else if (x == width - 1)
+                        {
+                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * Scale, Height = Scale };
+                            Canvas.SetTop(rect, y * Scale);
+                            Canvas.SetLeft(rect, lineStart * Scale);
+                            canvas.Children.Add(rect);
+                        }
+                    }
+                    else
+                    {
+                        if (lineStart != width) // Currently drawing
+                        {
+                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * Scale, Height = Scale };
+                            Canvas.SetTop(rect, y * Scale);
+                            Canvas.SetLeft(rect, lineStart * Scale);
+                            canvas.Children.Add(rect);
+
+                            lineStart = width;
+                        }
+                    }
+                }
+            }
+            return new Border() { Child = canvas, Width = Width * Scale, Height = Height * Scale }; 
         }
     }
 
