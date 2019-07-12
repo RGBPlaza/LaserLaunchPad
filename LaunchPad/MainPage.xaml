@@ -26,20 +26,6 @@
         <RelativePanel Grid.Row="1" Grid.RowSpan="2" Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}">
             <StackPanel Padding="16" Spacing="4" RelativePanel.AlignTopWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
                 <Button Name="LoadSVGButton" Content="Load SVG" FontFamily="Bahnschrift" Click="LoadSVGButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
-                <Slider Name="SmoothSlider" Minimum="1" Maximum="10" Header="Smoothness" FontFamily="Bahnschrift" StepFrequency="0.1" ValueChanged="SmoothSlider_ValueChanged" Visibility="Collapsed">
-                    <Slider.Transitions>
-                        <TransitionCollection>
-                            <AddDeleteThemeTransition/>
-                        </TransitionCollection>
-                    </Slider.Transitions>
-                </Slider>
-                <Slider Name="PassCountSlider" Minimum="1" Maximum="5" StepFrequency="1" Header="Passes" FontFamily="Bahnschrift" Visibility="Collapsed">
-                    <Slider.Transitions>
-                        <TransitionCollection>
-                            <AddDeleteThemeTransition/>
-                        </TransitionCollection>
-                    </Slider.Transitions>
-                </Slider>
                 <Button Name="LoadRasterButton" Content="Load Raster" FontFamily="Bahnschrift" Click="LoadRasterButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}">
                     <Button.Transitions>
                         <TransitionCollection>
@@ -47,27 +33,6 @@
                         </TransitionCollection>
                     </Button.Transitions>
                 </Button>
-                <Slider Name="ThresholdSlider" Minimum="0" Maximum="255" Header="Threshold" FontFamily="Bahnschrift" StepFrequency="1" Value="127" ValueChanged="ThresholdSlider_ValueChanged" Visibility="Collapsed">
-                    <Slider.Transitions>
-                        <TransitionCollection>
-                            <AddDeleteThemeTransition/>
-                        </TransitionCollection>
-                    </Slider.Transitions>
-                </Slider>
-                <Slider Name="LaminationSlider" Minimum="1" Maximum="10" Header="Lamination" FontFamily="Bahnschrift" StepFrequency="1" Value="1" ValueChanged="LaminationSlider_ValueChanged" Visibility="Collapsed">
-                    <Slider.Transitions>
-                        <TransitionCollection>
-                            <AddDeleteThemeTransition/>
-                        </TransitionCollection>
-                    </Slider.Transitions>
-                </Slider>
-                <ToggleSwitch Name="NegativeSwitch" Header="Print Negative" FontFamily="Bahnschrift" Toggled="NegativeSwitch_Toggled" Visibility="Collapsed">
-                    <ToggleSwitch.Transitions>
-                        <TransitionCollection>
-                            <AddDeleteThemeTransition/>
-                        </TransitionCollection>
-                    </ToggleSwitch.Transitions>
-                </ToggleSwitch>
             </StackPanel>
             <StackPanel Padding="16" Spacing="16" RelativePanel.AlignBottomWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
                 <ComboBox Name="PortComboBox" FontFamily="Bahnschrift" Header="Cutter Port" DropDownOpened="PortComboBox_DropDownOpened" PlaceholderText="Select Device" SelectionChanged="PortComboBox_SelectionChanged">
@@ -114,10 +79,5 @@
                 </TransitionCollection>
             </Canvas.Transitions>
         </Canvas>
-        <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Center" Padding="8" Spacing="8">
-            <Button Name="ScaleDownButton" FontFamily="Bahnschrift" Click="ScaleDownButton_Click" Content="-" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlTransparentRevealBorderBrush}"/>
-            <TextBox Name="ScaleTextBox" FontFamily="Bahnschrift" Text="100%" HorizontalContentAlignment="Center" TextChanged="ScaleTextBox_TextChanged" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlTransparentRevealBorderBrush}"/>
-            <Button Name="ScaleUpButton" FontFamily="Bahnschrift" Click="ScaleUpButton_Click" Content="+" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlTransparentRevealBorderBrush}"/>
-        </StackPanel>
     </Grid>
 </Page>

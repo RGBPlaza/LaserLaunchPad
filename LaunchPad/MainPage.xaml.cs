@@ -43,18 +43,6 @@ namespace LaunchPad
         double VX = 0;
         double VY = 0;
 
-        private void DisplayPreview(bool[,] bwMap)
-        {
-            List<Windows.UI.Xaml.Shapes.Rectangle> prevLines = GetPreviewRects(bwMap, (int)LaminationSlider.Value);
-            PreviewCanvas.Children.Clear();
-            foreach (var rect in prevLines)
-            {
-                rect.Fill = new SolidColorBrush(Windows.UI.Colors.Black);
-                rect.StrokeThickness = 0;
-                PreviewCanvas.Children.Add(rect);
-            }
-        }
-
         private async void LoadRasterButton_Click(object sender, RoutedEventArgs e)
         {
             filePicker.FileTypeFilter.Clear();
@@ -72,25 +60,14 @@ namespace LaunchPad
                         FileTextBlock.Text = string.Empty;
                         FileTextScrollView.Visibility = Visibility.Collapsed;
                         FileTextScrollTitleBlock.Visibility = Visibility.Collapsed;
-                        SmoothSlider.Visibility = Visibility.Collapsed;
-                        PassCountSlider.Visibility = Visibility.Collapsed;
-                        ThresholdSlider.Visibility = Visibility.Visible;
-                        LaminationSlider.Visibility = Visibility.Visible;
-                        NegativeSwitch.Visibility = Visibility.Visible;
                         PrintButton.IsEnabled = true;
 
-                        designs.Add(new BitmapDesign(decoder));
+
+                        designs.Add(new BitmapDesign(decoder, await decoder.GetPixelDataAsync()));
                         UpdatePreview();
-                        UpdateInstructions();
                     }
                 }
             }
-        }
-
-        public List<Windows.UI.Xaml.Shapes.Rectangle> GetPreviewRects(bool[,] bwMap, int lamination)
-        {
-            
-            return rects;
         }
 
         private async void LoadSVGButton_Click(object sender, RoutedEventArgs e)
@@ -103,20 +80,14 @@ namespace LaunchPad
             {
                 string imageFileString = await FileIO.ReadTextAsync(imageFile);
                 FileTextBlock.Text = imageFileString;
-                ThresholdSlider.Visibility = Visibility.Collapsed;
-                LaminationSlider.Visibility = Visibility.Collapsed;
-                NegativeSwitch.Visibility = Visibility.Collapsed;
                 FileTextScrollView.Visibility = Visibility.Visible;
                 FileTextScrollTitleBlock.Visibility = Visibility.Visible;
-                SmoothSlider.Visibility = Visibility.Visible;
-                PassCountSlider.Visibility = Visibility.Visible;
                 PrintButton.IsEnabled = true;
 
                 XmlDocument xDoc = new XmlDocument();
                 xDoc.LoadXml(imageFileString);
                 designs.Add(new SVGDesign(xDoc));
                 UpdatePreview();
-                UpdateInstructions();
             }
         }
 
@@ -132,23 +103,34 @@ namespace LaunchPad
             }
         }*/
 
-        List<CutterInstruction> fullInstructions = new List<CutterInstruction>();
+        private void UpdatePreview()
+        {
+            PreviewCanvas.Children.Clear();
+            foreach (Design design in designs)
+            {
+                Border border = design.GetPreviewElement();
+                border.BorderBrush = new SolidColorBrush(Windows.UI.Colors.Blue);
+                border.BorderThickness = new Thickness(2);
+                Canvas.SetLeft(border, design.X);
+                Canvas.SetTop(border, design.Y);
+                PreviewCanvas.Children.Add(border);
+            }
+        }
+
+        private List<CutterInstruction> instructions = new List<CutterInstruction>();
         private void PrintButton_Click(object sender, RoutedEventArgs e)
         {
             if (instructions != null && cutterSerial != null)
             {
-                fullInstructions.Clear();
+                instructions.Clear();
                 if (!cutterSerial.IsConnected)
                 {
-                    for (int pass = 0; pass < PassCountSlider.Value; pass++)
+                    foreach (Design design in designs)
                     {
-                        foreach (CutterInstruction instruction in instructions)
-                        {
-                            fullInstructions.Add(instruction);
-                        }
+                        instructions.AddRange(design.GetArduinoInstructions());
                     }
-                    fullInstructions.Add(CutterInstruction.PenUpInstruction);
-                    fullInstructions.Add(CutterInstruction.ReturnToOriginInstruction);
+                    instructions.Add(CutterInstruction.PenUpInstruction);
+                    instructions.Add(CutterInstruction.ReturnToOriginInstruction);
                     cutterSerial.Connect();
                 }
             }
@@ -161,13 +143,13 @@ namespace LaunchPad
             string resp = Encoding.ASCII.GetString(e.Data);
             if (resp == ":)")
             {
-                if (fullInstructions.Any())
+                if (instructions.Any())
                 {
                     string msg;
                     CutterInstruction currentInstruction;
                     do
                     {
-                        currentInstruction = fullInstructions.First();
+                        currentInstruction = instructions.First();
                         if (currentInstruction.IsCoord)
                         {
                             msg = currentInstruction.GetArduinoMessage(destX, destY);
@@ -181,8 +163,8 @@ namespace LaunchPad
                             LaserOn = currentInstruction.PenDown;
                             (VX, VY) = (0, 0);
                         }
-                        fullInstructions.Remove(currentInstruction);
-                    } while (string.IsNullOrWhiteSpace(msg) && fullInstructions.Any());
+                        instructions.Remove(currentInstruction);
+                    } while (string.IsNullOrWhiteSpace(msg) && instructions.Any());
 
                     System.Diagnostics.Debug.WriteLine(msg);
                     cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
@@ -452,8 +434,6 @@ namespace LaunchPad
 
     public abstract class Design
     {
-        public double Width { get; set; }
-        public double Height { get; set; }
         public double X { get; set; } = 0;
         public double Y { get; set; } = 0;
         public double Scale { get; set; } = 1;
@@ -487,6 +467,7 @@ namespace LaunchPad
 
         private void UpdatePoints()
         {
+            points.Clear();
             foreach (SvgPathSegmentList path in paths)
             {
                 foreach (SvgPathSegment segment in path)
@@ -550,17 +531,21 @@ namespace LaunchPad
             List<CutterInstruction> instructions = new List<CutterInstruction> { CutterInstruction.PenUpInstruction };
             foreach (PointCollection pointCollection in points)
             {
-                instructions.Add(new CutterInstruction(pointCollection.First()));
-                instructions.Add(CutterInstruction.PenDownInstruction);
-                for (int i = 1; i < pointCollection.Count; i++)
-                    instructions.Add(new CutterInstruction(pointCollection[i]));
-                instructions.Add(CutterInstruction.PenUpInstruction);
+                for (int pass = 0; pass < passes; pass++)
+                {
+                    instructions.Add(new CutterInstruction(pointCollection.First()));
+                    instructions.Add(CutterInstruction.PenDownInstruction);
+                    for (int i = 1; i < pointCollection.Count; i++)
+                        instructions.Add(new CutterInstruction(pointCollection[i]));
+                    instructions.Add(CutterInstruction.PenUpInstruction);
+                }
             }
             return instructions;
         }
 
         public override Border GetPreviewElement()
         {
+            UpdatePoints();
             Canvas canvas = new Canvas();
             
             foreach(PointCollection pointCollection in points)
@@ -575,7 +560,7 @@ namespace LaunchPad
                 });
             }
 
-            return new Border() { Child = canvas, Width = Scale * Width, Height = Scale * Height };
+            return new Border() { Child = canvas };
         }
 
         private PointF ColinearAtTime(PointF A, PointF B, float t)
@@ -641,27 +626,26 @@ namespace LaunchPad
 
     public class BitmapDesign : Design
     {
-        public BitmapDesign(BitmapDecoder decoder)
+        public BitmapDesign(BitmapDecoder decoder, PixelDataProvider pixelData)
         {
             this.decoder = decoder;
+            this.pixelData = pixelData;
             UpdateBWMap();
         }
 
         private readonly BitmapDecoder decoder;
-        private BitmapEditor bitmapEditor;
+        private readonly PixelDataProvider pixelData;
         private uint threshold = 128;
         private bool isNegative = false;
         private bool[,] bwMap;
 
         public uint Threshold { get => threshold; set { threshold = value; UpdateBWMap(); } }
-        public bool InNegative { get => isNegative; set { isNegative = value; UpdateBWMap(); } }
+        public bool IsNegative { get => isNegative; set { isNegative = value; UpdateBWMap(); } }
 
-        private async void UpdateBWMap()
+        private void UpdateBWMap()
         {
-            PixelDataProvider pixelData = await decoder.GetPixelDataAsync();
-            bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
+            BitmapEditor bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
             bwMap = bitmapEditor.GetBWMap(threshold, isNegative);
-            
         }
 
         public override List<CutterInstruction> GetArduinoInstructions()
@@ -669,39 +653,54 @@ namespace LaunchPad
             List<CutterInstruction> instructions = new List<CutterInstruction>();
             int width = bwMap.GetLength(0);
             int height = bwMap.GetLength(1);
-            bool drawing;
-            int startingX;
-            int stepX;
-            instructions.Add(CutterInstruction.PenUpInstruction);
-            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, 0)));
-            for (int y = 0; y < height; y ++)
+            bool penDown = false;
+            for(int y = 0; y < height; y++)
             {
-                drawing = false;
-                startingX = (y % 2 == 0) ? 0 : width - 1;
-                stepX = (y % 2 == 0) ? 1 : -1;
-                for (int x = startingX; (y % 2 == 0) ? x < width : x > 0; x += stepX)
+                if(y % 2 == 0)
                 {
-                    if (bwMap[x, y])
+                    for (int x = 0; x < width; x ++)
                     {
-                        if (!drawing) // Not currenntly drawing
+                        if (bwMap[x, y] && !penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * Scale, y * Scale)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x, y)));
                             instructions.Add(CutterInstruction.PenDownInstruction);
-                            drawing = true;
+                            penDown = true;
                         }
-                        else if (x == width - (startingX + 1))
+                        else if (x == width - 1 && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * Scale, y * Scale)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(width - 1, y)));
                             instructions.Add(CutterInstruction.PenUpInstruction);
+                            penDown = false;
+                        }
+                        else if (!bwMap[x, y] && penDown)
+                        {
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x - 1, y)));
+                            instructions.Add(CutterInstruction.PenUpInstruction);
+                            penDown = false;
                         }
                     }
-                    else
+                }
+                else
+                {
+                    for (int x = width - 1; x >= 0; x--)
                     {
-                        if (drawing) // Currently drawing
+                        if (bwMap[x, y] && !penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * Scale, y * Scale)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x, y)));
+                            instructions.Add(CutterInstruction.PenDownInstruction);
+                            penDown = true;
+                        }
+                        else if(x == 0 && penDown)
+                        {
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, y)));
                             instructions.Add(CutterInstruction.PenUpInstruction);
-                            drawing = false;
+                            penDown = false;
+                        }
+                        else if (!bwMap[x, y] && penDown)
+                        {
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x + 1, y)));
+                            instructions.Add(CutterInstruction.PenUpInstruction);
+                            penDown = false;
                         }
                     }
                 }
@@ -714,41 +713,68 @@ namespace LaunchPad
             Canvas canvas = new Canvas();
             int width = bwMap.GetLength(0);
             int height = bwMap.GetLength(1);
-            int lineStart;                    // Equals width when a line hasn't been started
+            bool penDown;
+            int startX = 0;
             for (int y = 0; y < height; y++)
             {
-                lineStart = width;
-                for (int x = 0; x < width; x += 1)
+                penDown = false;
+                if (y % 2 == 0)
                 {
-                    if (bwMap[x, y])
+                    for (int x = 0; x < width; x++)
                     {
-                        if (lineStart == width) // Not currently drawing
+                        if (bwMap[x, y] && !penDown)
                         {
-                            lineStart = x;
+                            startX = x;
+                            penDown = true;
                         }
-                        else if (x == width - 1)
+                        else if (x == width - 1 && penDown)
                         {
-                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * Scale, Height = Scale };
-                            Canvas.SetTop(rect, y * Scale);
-                            Canvas.SetLeft(rect, lineStart * Scale);
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = width - startX, Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetLeft(rect, startX);
+                            Canvas.SetTop(rect, y);
                             canvas.Children.Add(rect);
+                            penDown = false;
                         }
-                    }
-                    else
-                    {
-                        if (lineStart != width) // Currently drawing
+                        else if (!bwMap[x, y] && penDown)
                         {
-                            var rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1 - lineStart) * Scale, Height = Scale };
-                            Canvas.SetTop(rect, y * Scale);
-                            Canvas.SetLeft(rect, lineStart * Scale);
+                            //System.Diagnostics.Debug.WriteLine($"{x - 1},{startX}");
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1) - startX, Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetLeft(rect, startX);
+                            Canvas.SetTop(rect, y);
                             canvas.Children.Add(rect);
-
-                            lineStart = width;
+                            penDown = false;
                         }
                     }
                 }
+                else
+                {
+                    for (int x = width - 1; x >= 0; x--)
+                    {
+                        if (bwMap[x, y] && !penDown)
+                        {
+                            startX = x;
+                            penDown = true;
+                        }
+                        else if (x == 0 && penDown)
+                        {
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = startX, Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetTop(rect, y);
+                            canvas.Children.Add(rect);
+                            penDown = false;
+                        }
+                        else if (!bwMap[x, y] && penDown)
+                        {
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = startX - (x + 1), Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetLeft(rect, x + 1);
+                            Canvas.SetTop(rect, y);
+                            canvas.Children.Add(rect);
+                            penDown = false;
+                        }
+                    }
+                }
+
             }
-            return new Border() { Child = canvas, Width = Width * Scale, Height = Height * Scale }; 
+            return new Border() { Child = canvas }; 
         }
     }
 
@@ -777,7 +803,7 @@ namespace LaunchPad
         private double diffX, diffY, theta, vX, vY, t;
         public string GetArduinoMessage(double currentX = 0, double currentY = 0)
         {
-            string msg = string.Empty;
+            string msg;
             if (IsCoord)
             {
                 (vX, vY) = GetComponentVelocities(currentX, currentY);
@@ -824,5 +850,4 @@ namespace LaunchPad
         public static readonly CutterInstruction ReturnToOriginInstruction = new CutterInstruction(new Windows.Foundation.Point(0, 0));
         public const string ZeroString = "(0,0,0);";
     }
-
 }
