@@ -46,22 +46,80 @@
             </StackPanel>
         </RelativePanel>
 
-        <Border Name="FileTextScrollTitleBlock" Grid.Column="1" Width="320" Background="{StaticResource SystemControlAcrylicWindowBrush}" Visibility="Collapsed" Padding="16,16,16,0">
+        <Border Name="PropertiesTitleBlock" Grid.Column="1" Width="320" Background="{StaticResource SystemControlAcrylicWindowBrush}" Visibility="Collapsed" Padding="16,16,16,0">
             <Border.Transitions>
                 <TransitionCollection>
                     <PaneThemeTransition Edge="Left"/>
                 </TransitionCollection>
             </Border.Transitions>
-            <TextBlock Text="SVG File" FontFamily="Bahnschrift" FontSize="24" TextAlignment="Center"/>
+            <TextBlock Text="Properties" FontFamily="Bahnschrift" FontSize="24" TextAlignment="Center"/>
         </Border>
 
-        <ScrollViewer Name="FileTextScrollView" Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Width="320" HorizontalScrollMode="Disabled" Padding="16" Visibility="Collapsed" Background="{StaticResource SystemControlAcrylicWindowBrush}">
+        <ScrollViewer Name="PropertiesScrollView" Grid.Row="1" Grid.RowSpan="2" Grid.Column="1" Width="320" HorizontalScrollMode="Disabled" Padding="16" Visibility="Collapsed" Background="{StaticResource SystemControlAcrylicWindowBrush}">
             <ScrollViewer.Transitions>
                 <TransitionCollection>
                     <PaneThemeTransition Edge="Left"/>
                 </TransitionCollection>
             </ScrollViewer.Transitions>
-            <TextBlock Name="FileTextBlock" FontFamily="Consolas" FontSize="14" TextWrapping="Wrap"/>
+            <StackPanel Spacing="32">
+                <Grid Name="GeneralPropertiesGrid" RowSpacing="8" ColumnSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="General Properties" Grid.ColumnSpan="2" FontFamily="Bahnschrift"/>
+                    <TextBlock Text="X-Position:" Grid.Row="1" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <TextBox Name="XPosTextBox" Grid.Row="1" Grid.Column="1" TextChanged="XPosTextBox_TextChanged"/>
+                    <TextBlock Text="Y-Position:" Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <TextBox Name="YPosTextBox" Grid.Row="2" Grid.Column="1" TextChanged="YPosTextBox_TextChanged"/>
+                    <TextBlock Text="Width:" Grid.Row="3" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <TextBox Name="WidthTextBox" Grid.Row="3" Grid.Column="1" TextChanged="WidthTextBox_TextChanged"/>
+                    <TextBlock Text="Height:" Grid.Row="4" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <TextBox Name="HeightTextBox" Grid.Row="4" Grid.Column="1" TextChanged="HeightTextBox_TextChanged"/>
+                    <TextBlock Text="Scale:" Grid.Row="5" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <TextBox Name="ScaleTextBox" Grid.Row="5" Grid.Column="1" TextChanged="ScaleTextBox_TextChanged"/>
+                    <TextBlock Text="Laser Power:" Grid.Row="6" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <Slider Name="LaserPowerSlider" Grid.Row="7" Grid.ColumnSpan="2" Maximum="256" ValueChanged="LaserPowerSlider_ValueChanged"/>
+                </Grid>
+                <Grid Name="VectorPropertiesGrid" RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="SVG Properties" FontFamily="Bahnschrift"/>
+                    <TextBlock Text="Smoothness:" Grid.Row="1"/>
+                    <Slider Name="SmoothnessSlider" Grid.Row="2" Minimum="1" Maximum="20" ValueChanged="SmoothnessSlider_ValueChanged"/>
+                    <TextBlock Text="Passes:" Grid.Row="3"/>
+                    <Slider Name="PassesSlider" Grid.Row="4" Minimum="1" Maximum="5" ValueChanged="PassesSlider_ValueChanged"/>
+                </Grid>
+                <Grid Name="RasterPropertiesGrid" RowSpacing="8">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="Raster Properties" FontFamily="Bahnschrift"/>
+                    <TextBlock Text="Threshold:" Grid.Row="1"/>
+                    <Slider Name="ThresholdSlider" Grid.Row="2" ValueChanged="ThresholdSlider_ValueChanged" Maximum="256"/>
+                    <TextBlock Text="Negation:" Grid.Row="3"/>
+                    <ToggleSwitch Name="NegateSwitch" Toggled="NegateSwitch_Toggled" OnContent="Negative Space" OffContent="Positive Space" Grid.Row="4"/>
+                </Grid>
+            </StackPanel>
         </ScrollViewer>
 
         <TextBlock Grid.Column="2" Text="Print Preview" FontFamily="Bahnschrift" FontSize="24" TextAlignment="Center" Margin="16,16,16,0">

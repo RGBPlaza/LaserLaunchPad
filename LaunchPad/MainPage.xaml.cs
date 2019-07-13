@@ -35,8 +35,10 @@ namespace LaunchPad
         private StorageFile imageFile;
         private readonly FileOpenPicker filePicker;
         private readonly List<Design> designs;
+        private Design selectedDesign;
         private static SerialPortInput cutterSerial;
 
+        // Cut-Time Variables
         double LaserX = 0;
         double LaserY = 0;
         bool LaserOn = false;
@@ -57,14 +59,13 @@ namespace LaunchPad
                     BitmapDecoder decoder = await BitmapDecoder.CreateAsync(stream);
                     if (decoder.BitmapPixelFormat == BitmapPixelFormat.Bgra8)
                     {
-                        FileTextBlock.Text = string.Empty;
-                        FileTextScrollView.Visibility = Visibility.Collapsed;
-                        FileTextScrollTitleBlock.Visibility = Visibility.Collapsed;
-                        PrintButton.IsEnabled = true;
-
-
-                        designs.Add(new BitmapDesign(decoder, await decoder.GetPixelDataAsync()));
+                        selectedDesign = new BitmapDesign(decoder, await decoder.GetPixelDataAsync());
+                        designs.Add(selectedDesign);
                         UpdatePreview();
+                        PropertiesScrollView.Visibility = Visibility.Visible;
+                        PropertiesTitleBlock.Visibility = Visibility.Visible;
+
+                        PrintButton.IsEnabled = true;
                     }
                 }
             }
@@ -79,29 +80,17 @@ namespace LaunchPad
             if (imageFile != null)
             {
                 string imageFileString = await FileIO.ReadTextAsync(imageFile);
-                FileTextBlock.Text = imageFileString;
-                FileTextScrollView.Visibility = Visibility.Visible;
-                FileTextScrollTitleBlock.Visibility = Visibility.Visible;
-                PrintButton.IsEnabled = true;
-
                 XmlDocument xDoc = new XmlDocument();
                 xDoc.LoadXml(imageFileString);
-                designs.Add(new SVGDesign(xDoc));
+                selectedDesign = new SVGDesign(xDoc);
+                designs.Add(selectedDesign);
                 UpdatePreview();
+                PropertiesScrollView.Visibility = Visibility.Visible;
+                PropertiesTitleBlock.Visibility = Visibility.Visible;
+
+                PrintButton.IsEnabled = true;
             }
         }
-
-        // TODO: smoothness for individual items
-        /*
-        private void SmoothSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
-        {
-            if (imageFile != null)
-            {
-                var paths = GetPathsFromSvg();
-                DisplayPreview(GetPreviewPoints(paths));
-                instructions = GetArduinoInstructions(paths);
-            }
-        }*/
 
         private void UpdatePreview()
         {
@@ -109,12 +98,50 @@ namespace LaunchPad
             foreach (Design design in designs)
             {
                 Border border = design.GetPreviewElement();
-                border.BorderBrush = new SolidColorBrush(Windows.UI.Colors.Blue);
-                border.BorderThickness = new Thickness(2);
+                border.BorderBrush.Opacity = Equals(design, selectedDesign) ? 1 : 0;
                 Canvas.SetLeft(border, design.X);
                 Canvas.SetTop(border, design.Y);
+                border.Tag = designs.IndexOf(design);
+                ((Canvas)border.Child).Tag = designs.IndexOf(design);
+                border.Tapped += PreviewBorder_Tapped;
+                border.Child.Tapped += PreviewCanvas_Tapped;
                 PreviewCanvas.Children.Add(border);
             }
+
+            XPosTextBox.Text = selectedDesign.X.ToString();
+            YPosTextBox.Text = selectedDesign.Y.ToString();
+            WidthTextBox.Text = selectedDesign.Width.ToString();
+            HeightTextBox.Text = selectedDesign.Height.ToString();
+            ScaleTextBox.Text = selectedDesign.Scale.ToString();
+            LaserPowerSlider.Value = selectedDesign.LaserPower;
+
+            if (selectedDesign.GetType() == typeof(SVGDesign))
+            {
+                SmoothnessSlider.Value = ((SVGDesign)selectedDesign).Smoothness;
+                PassesSlider.Value = ((SVGDesign)selectedDesign).Passes;
+                VectorPropertiesGrid.Visibility = Visibility.Visible;
+                RasterPropertiesGrid.Visibility = Visibility.Collapsed;
+            }
+
+            if (selectedDesign.GetType() == typeof(BitmapDesign))
+            {
+                ThresholdSlider.Value = ((BitmapDesign)selectedDesign).Threshold;
+                NegateSwitch.IsOn = ((BitmapDesign)selectedDesign).IsNegative;
+                VectorPropertiesGrid.Visibility = Visibility.Collapsed;
+                RasterPropertiesGrid.Visibility = Visibility.Visible;
+            }
+        }
+
+        private void PreviewCanvas_Tapped(object sender, Windows.UI.Xaml.Input.TappedRoutedEventArgs e)
+        {
+            selectedDesign = designs[(int)((Canvas)sender).Tag];
+            UpdatePreview();
+        }
+
+        private void PreviewBorder_Tapped(object sender, Windows.UI.Xaml.Input.TappedRoutedEventArgs e)
+        {
+            selectedDesign = designs[(int)((Border)sender).Tag];
+            UpdatePreview();
         }
 
         private List<CutterInstruction> instructions = new List<CutterInstruction>();
@@ -190,6 +217,127 @@ namespace LaunchPad
                 PortComboBox.ItemsSource = devices;
         }
 
+        private void XPosTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if(double.TryParse(XPosTextBox.Text,out double xPos))
+            {
+                if (xPos != selectedDesign.X)
+                {
+                    selectedDesign.X = xPos;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void YPosTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (double.TryParse(YPosTextBox.Text, out double yPos))
+            {
+                if (yPos != selectedDesign.Y)
+                {
+                    selectedDesign.Y = yPos;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void WidthTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (double.TryParse(WidthTextBox.Text, out double width))
+            {
+                if (width != selectedDesign.Width && width > 0)
+                {
+                    selectedDesign.Width = width;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void HeightTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (double.TryParse(HeightTextBox.Text, out double height))
+            {
+                if (height != selectedDesign.Height && height > 0)
+                {
+                    selectedDesign.Height = height;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void ScaleTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            if (double.TryParse(ScaleTextBox.Text, out double scale))
+            {
+                if (scale != selectedDesign.Scale && scale > 0)
+                {
+                    selectedDesign.Scale = scale;
+                    UpdatePreview();
+                }
+            }
+
+        }
+
+        private void LaserPowerSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (selectedDesign != null)
+            {
+                if (e.NewValue != selectedDesign.LaserPower)
+                {
+                    selectedDesign.LaserPower = e.NewValue;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void SmoothnessSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (selectedDesign != null)
+            {
+                if ((int)e.NewValue != ((SVGDesign)selectedDesign).Smoothness)
+                {
+                    ((SVGDesign)selectedDesign).Smoothness = (int)e.NewValue;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void PassesSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (selectedDesign != null)
+            {
+                if ((int)e.NewValue != ((SVGDesign)selectedDesign).Passes)
+                {
+                    ((SVGDesign)selectedDesign).Passes = (int)e.NewValue;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void ThresholdSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
+        {
+            if (selectedDesign != null)
+            {
+                if ((uint)e.NewValue != ((BitmapDesign)selectedDesign).Threshold)
+                {
+                    ((BitmapDesign)selectedDesign).Threshold = (uint)e.NewValue;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void NegateSwitch_Toggled(object sender, RoutedEventArgs e)
+        {
+            if (selectedDesign != null)
+            {
+                if (NegateSwitch.IsOn != ((BitmapDesign)selectedDesign).IsNegative)
+                {
+                    ((BitmapDesign)selectedDesign).IsNegative = NegateSwitch.IsOn;
+                    UpdatePreview();
+                }
+            }
+        }
+
         private void PortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (PortComboBox.SelectedItem != null)
@@ -199,78 +347,6 @@ namespace LaunchPad
                 cutterSerial.SetPort(portName, 9600);
             }
         }
-
-        /*
-        private void ThresholdSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
-        {
-            if (bitmapEditor != null)
-            {
-                bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
-                DisplayPreview(bwMap);
-                instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
-            }
-        }
-
-        private void NegativeSwitch_Toggled(object sender, RoutedEventArgs e)
-        {
-            if (bitmapEditor != null)
-            {
-                bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
-                DisplayPreview(bwMap);
-                instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
-            }
-        }
-
-        private void LaminationSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
-        {
-            if (bitmapEditor != null)
-            {
-                bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
-                DisplayPreview(bwMap);
-                instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
-            }
-        }*/
-        /*
-        private void ScaleTextBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (double.TryParse(ScaleTextBox.Text.Replace("%", ""), out double newScale))
-            {
-                if (newScale > 0)
-                {
-                    currentScale = newScale / 100;
-                    if (imageFile != null)
-                    {
-                        if (PassCountSlider.Visibility == Visibility.Visible)
-                        {
-                            var paths = GetPathsFromSvg();
-                            DisplayPreview(GetPreviewPoints(paths));
-                            instructions = GetArduinoInstructions(paths);
-                        }
-                        else
-                        {
-                            bool[,] bwMap = bitmapEditor.GetBWMap((uint)ThresholdSlider.Value, NegativeSwitch.IsOn);
-                            DisplayPreview(bwMap);
-                            instructions = GetArduinoInstructions(bwMap, (int)LaminationSlider.Value);
-                        }
-                    }
-                }
-            }
-        }*/
-        /*
-        private void ScaleUpButton_Click(object sender, RoutedEventArgs e)
-        {
-            currentScale += 0.1;
-            ScaleTextBox.Text = (100 * currentScale).ToString() + "%";
-        }
-
-        private void ScaleDownButton_Click(object sender, RoutedEventArgs e)
-        {
-            if (currentScale > 0.1)
-            {
-                currentScale -= 0.1;
-                ScaleTextBox.Text = (100 * currentScale).ToString() + "%";
-            }
-        }*/
     }
 
     public class CenterParameterizedArcData
@@ -357,11 +433,6 @@ namespace LaunchPad
         {
             return new Windows.Foundation.Point(point.X * scale, point.Y * scale);
         }
-
-        public static string ToCoordString(this PointF point, double scale)
-        {
-            return $"({point.X * scale},{point.Y * scale});";
-        }
     }
 
     public class BitmapPixel
@@ -436,7 +507,17 @@ namespace LaunchPad
     {
         public double X { get; set; } = 0;
         public double Y { get; set; } = 0;
-        public double Scale { get; set; } = 1;
+
+        protected double originalWidth;
+        protected double originalHeight;
+
+        protected double width;
+        protected double height;
+        protected double scale = 1;
+
+        public double Scale { get => scale; set { scale = value; width = originalWidth * scale; height = originalHeight * scale; } }
+        public double Width { get => width; set { width = value; scale = width / originalWidth; height = originalHeight * scale; } }
+        public double Height { get => height; set { height = value; scale = height / originalHeight; width = originalWidth * scale; } }
         public double LaserPower { get; set; } = 128;
 
         public abstract List<CutterInstruction> GetArduinoInstructions();
@@ -457,12 +538,18 @@ namespace LaunchPad
                 SvgPathSegmentList segments = SvgPathBuilder.Parse(pathData);
                 paths.Add(segments);
             }
+            var dims = ((XmlElement)xDoc.GetElementsByTagName("svg")[0]).GetAttribute("viewBox").Split(' ');
+            (originalWidth, originalHeight) = (double.Parse(dims[2]), double.Parse(dims[3]));
+            (width, height) = (originalWidth, originalHeight);
             UpdatePoints();
         }
 
+        private float step { get => MathF.Pow(1.2f, -Smoothness); }
+
+        public int Smoothness { get; set; } = 1;
+        public int Passes { get; set; } = 1;
+
         private List<SvgPathSegmentList> paths;
-        private float step = 1;
-        private int passes = 1;
         private List<PointCollection> points;
 
         private void UpdatePoints()
@@ -475,51 +562,49 @@ namespace LaunchPad
                     if (segment.GetType() == typeof(SvgMoveToSegment))
                     {
                         var seg = (SvgMoveToSegment)segment;
-                        points.Add(GetMoveToPointCollection(seg, Scale));
+                        points.Add(GetMoveToPointCollection(seg));
                     }
                     else if (segment.GetType() == typeof(SvgLineSegment))
                     {
                         var seg = (SvgLineSegment)segment;
-                        points.Last().Add(GetLineToPoint(seg).ToFoundationPoint(Scale));
+                        points.Last().Add(GetLineToPoint(seg).ToFoundationPoint(scale));
                     }
                     else if (segment.GetType() == typeof(SvgQuadraticCurveSegment))
                     {
                         var seg = (SvgQuadraticCurveSegment)segment;
                         for (float t = 0; t < 1; t += step)
                         {
-                            points.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint(Scale));
+                            points.Last().Add(GetQuadraticPoint(seg, t).ToFoundationPoint(scale));
                         }
-                        points.Last().Add(seg.End.ToFoundationPoint(Scale));
+                        points.Last().Add(seg.End.ToFoundationPoint(scale));
                     }
                     else if (segment.GetType() == typeof(SvgCubicCurveSegment))
                     {
                         var seg = (SvgCubicCurveSegment)segment;
                         for (float t = 0; t < 1; t += step)
                         {
-                            points.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint(Scale));
+                            points.Last().Add(GetCubicPoint(seg, t).ToFoundationPoint(scale));
                         }
-                        points.Last().Add(seg.End.ToFoundationPoint(Scale));
+                        points.Last().Add(seg.End.ToFoundationPoint(scale));
                     }
                     else if (segment.GetType() == typeof(SvgArcSegment))
                     {
                         var seg = (SvgArcSegment)segment;
                         var arcData = new CenterParameterizedArcData(seg);
-                        System.Diagnostics.Debug.WriteLine(seg.Size);
-                        System.Diagnostics.Debug.WriteLine($"Centre ({arcData.cx},{arcData.cy}), Radius ({arcData.rx},{arcData.ry})");
                         // Get Points for Polyline Approximation
                         for (float t = 0; t < 1; t += step)
                         {
-                            points.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint(Scale));
+                            points.Last().Add(GetArcPoint(arcData, t).ToFoundationPoint(scale));
                         }
-                        points.Last().Add(seg.End.ToFoundationPoint(Scale));
+                        points.Last().Add(seg.End.ToFoundationPoint(scale));
                     }
                     else if (segment.GetType() == typeof(SvgClosePathSegment))
                     {
                         var seg = (SvgClosePathSegment)segment;
 
-                        if (points.Last().First() != seg.Start.ToFoundationPoint(Scale)) // if length back to start is not zero
+                        if (points.Last().First() != seg.Start.ToFoundationPoint(scale)) // if length back to start is not zero
                         {
-                            points.Last().Add(GetClosePathPoint().ToFoundationPoint(Scale));
+                            points.Last().Add(GetClosePathPoint().ToFoundationPoint(1));
                         }
                     }
                 }
@@ -531,7 +616,7 @@ namespace LaunchPad
             List<CutterInstruction> instructions = new List<CutterInstruction> { CutterInstruction.PenUpInstruction };
             foreach (PointCollection pointCollection in points)
             {
-                for (int pass = 0; pass < passes; pass++)
+                for (int pass = 0; pass < Passes; pass++)
                 {
                     instructions.Add(new CutterInstruction(pointCollection.First()));
                     instructions.Add(CutterInstruction.PenDownInstruction);
@@ -547,20 +632,17 @@ namespace LaunchPad
         {
             UpdatePoints();
             Canvas canvas = new Canvas();
-            
+
             foreach(PointCollection pointCollection in points)
             {
                 canvas.Children.Add(new Windows.UI.Xaml.Shapes.Polyline()
                 {
                     Stroke = new SolidColorBrush(Windows.UI.Colors.Black),
                     StrokeThickness = 2,
-                    Width = 512,
-                    Height = 512,
                     Points = pointCollection
                 });
             }
-
-            return new Border() { Child = canvas };
+            return new Border() { Child = canvas, Width = width + 4, Height = height + 4, Margin = new Thickness(-2, -2, 0, 0), BorderBrush = new SolidColorBrush(Windows.UI.Colors.Blue), BorderThickness = new Thickness(2) };
         }
 
         private PointF ColinearAtTime(PointF A, PointF B, float t)
@@ -570,7 +652,7 @@ namespace LaunchPad
             return new PointF(x, y);
         }
 
-        private PointCollection GetMoveToPointCollection(SvgMoveToSegment seg, double scale)
+        private PointCollection GetMoveToPointCollection(SvgMoveToSegment seg)
         {
             return new PointCollection() { seg.End.ToFoundationPoint(scale) };
         }
@@ -628,25 +710,18 @@ namespace LaunchPad
     {
         public BitmapDesign(BitmapDecoder decoder, PixelDataProvider pixelData)
         {
-            this.decoder = decoder;
-            this.pixelData = pixelData;
+            bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
+            (originalWidth, originalHeight) = (decoder.PixelWidth, decoder.PixelHeight);
+            (width, height) = (originalWidth, originalHeight);
             UpdateBWMap();
         }
-
-        private readonly BitmapDecoder decoder;
-        private readonly PixelDataProvider pixelData;
-        private uint threshold = 128;
-        private bool isNegative = false;
+        private readonly BitmapEditor bitmapEditor;
         private bool[,] bwMap;
 
-        public uint Threshold { get => threshold; set { threshold = value; UpdateBWMap(); } }
-        public bool IsNegative { get => isNegative; set { isNegative = value; UpdateBWMap(); } }
+        public uint Threshold { get; set; } = 128;
+        public bool IsNegative { get; set; } = false;
 
-        private void UpdateBWMap()
-        {
-            BitmapEditor bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
-            bwMap = bitmapEditor.GetBWMap(threshold, isNegative);
-        }
+        private void UpdateBWMap() => bwMap = bitmapEditor.GetBWMap(Threshold, IsNegative);
 
         public override List<CutterInstruction> GetArduinoInstructions()
         {
@@ -654,27 +729,27 @@ namespace LaunchPad
             int width = bwMap.GetLength(0);
             int height = bwMap.GetLength(1);
             bool penDown = false;
-            for(int y = 0; y < height; y++)
+            for (int y = 0; y < height; y++)
             {
-                if(y % 2 == 0)
+                if (y % 2 == 0)
                 {
-                    for (int x = 0; x < width; x ++)
+                    for (int x = 0; x < width; x++)
                     {
                         if (bwMap[x, y] && !penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x, y)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale)));
                             instructions.Add(CutterInstruction.PenDownInstruction);
                             penDown = true;
                         }
                         else if (x == width - 1 && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(width - 1, y)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((width - 1) * scale, y * scale)));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
                         else if (!bwMap[x, y] && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x - 1, y)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((x - 1) * scale, y * scale)));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
@@ -686,19 +761,19 @@ namespace LaunchPad
                     {
                         if (bwMap[x, y] && !penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x, y)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale)));
                             instructions.Add(CutterInstruction.PenDownInstruction);
                             penDown = true;
                         }
-                        else if(x == 0 && penDown)
+                        else if (x == 0 && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, y)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, y * scale)));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
                         else if (!bwMap[x, y] && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x + 1, y)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((x + 1) * scale, y * scale)));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
@@ -710,6 +785,7 @@ namespace LaunchPad
 
         public override Border GetPreviewElement()
         {
+            UpdateBWMap();
             Canvas canvas = new Canvas();
             int width = bwMap.GetLength(0);
             int height = bwMap.GetLength(1);
@@ -729,18 +805,18 @@ namespace LaunchPad
                         }
                         else if (x == width - 1 && penDown)
                         {
-                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = width - startX, Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
-                            Canvas.SetLeft(rect, startX);
-                            Canvas.SetTop(rect, y);
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (width - startX) * scale, Height = scale, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetLeft(rect, startX * scale);
+                            Canvas.SetTop(rect, y * scale);
                             canvas.Children.Add(rect);
                             penDown = false;
                         }
                         else if (!bwMap[x, y] && penDown)
                         {
                             //System.Diagnostics.Debug.WriteLine($"{x - 1},{startX}");
-                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (x - 1) - startX, Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
-                            Canvas.SetLeft(rect, startX);
-                            Canvas.SetTop(rect, y);
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = ((x - 1) - startX) * scale, Height = scale, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetLeft(rect, startX * scale);
+                            Canvas.SetTop(rect, y * scale);
                             canvas.Children.Add(rect);
                             penDown = false;
                         }
@@ -757,16 +833,16 @@ namespace LaunchPad
                         }
                         else if (x == 0 && penDown)
                         {
-                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = startX, Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
-                            Canvas.SetTop(rect, y);
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = startX * scale, Height = scale, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetTop(rect, y * scale);
                             canvas.Children.Add(rect);
                             penDown = false;
                         }
                         else if (!bwMap[x, y] && penDown)
                         {
-                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = startX - (x + 1), Height = 1, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
-                            Canvas.SetLeft(rect, x + 1);
-                            Canvas.SetTop(rect, y);
+                            Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = (startX - (x + 1)) * scale, Height = scale, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
+                            Canvas.SetLeft(rect, (x + 1) * scale);
+                            Canvas.SetTop(rect, y * scale);
                             canvas.Children.Add(rect);
                             penDown = false;
                         }
@@ -774,7 +850,7 @@ namespace LaunchPad
                 }
 
             }
-            return new Border() { Child = canvas }; 
+            return new Border() { Child = canvas, Width = base.width + 4, Height = base.height + 4, Margin = new Thickness(-2, -2, 0, 0), BorderBrush = new SolidColorBrush(Windows.UI.Colors.Blue), BorderThickness = new Thickness(2) }; 
         }
     }
 
