@@ -38,13 +38,6 @@ namespace LaunchPad
         private Design selectedDesign;
         private static SerialPortInput cutterSerial;
 
-        // Cut-Time Variables
-        double LaserX = 0;
-        double LaserY = 0;
-        bool LaserOn = false;
-        double VX = 0;
-        double VY = 0;
-
         private async void LoadRasterButton_Click(object sender, RoutedEventArgs e)
         {
             filePicker.FileTypeFilter.Clear();
@@ -163,7 +156,14 @@ namespace LaunchPad
             }
         }
 
-        double destX, destY = 0;
+
+        // Cut-Time Variables
+        private double laserX = 0;
+        private double laserY = 0;
+        private bool laserOn = false;
+        private double vX = 0;
+        private double vY = 0;
+        private double destX, destY = 0;
 
         private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
         {
@@ -180,15 +180,15 @@ namespace LaunchPad
                         if (currentInstruction.IsCoord)
                         {
                             msg = currentInstruction.GetArduinoMessage(destX, destY);
-                            (VX, VY) = currentInstruction.GetComponentVelocities(destX, destY);
-                            (LaserX, LaserY) = (destX, destY);
+                            (vX, vY) = currentInstruction.GetComponentVelocities(destX, destY);
+                            (laserX, laserY) = (destX, destY);
                             (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
                         }
                         else
                         {
                             msg = currentInstruction.GetArduinoMessage();
-                            LaserOn = currentInstruction.PenDown;
-                            (VX, VY) = (0, 0);
+                            laserOn = currentInstruction.LaserPower > 0;
+                            (vX, vY) = (0, 0);
                         }
                         instructions.Remove(currentInstruction);
                     } while (string.IsNullOrWhiteSpace(msg) && instructions.Any());
@@ -200,7 +200,7 @@ namespace LaunchPad
                 {
                     //cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
                     System.Diagnostics.Debug.WriteLine("Print Complete");
-                    (VX, VY) = (0, 0);
+                    (vX, vY) = (0, 0);
                 }
             }
             else
@@ -282,9 +282,9 @@ namespace LaunchPad
         {
             if (selectedDesign != null)
             {
-                if (e.NewValue != selectedDesign.LaserPower)
+                if ((int)e.NewValue != selectedDesign.LaserPower)
                 {
-                    selectedDesign.LaserPower = e.NewValue;
+                    selectedDesign.LaserPower = (int)e.NewValue;
                     UpdatePreview();
                 }
             }
@@ -518,7 +518,7 @@ namespace LaunchPad
         public double Scale { get => scale; set { scale = value; width = originalWidth * scale; height = originalHeight * scale; } }
         public double Width { get => width; set { width = value; scale = width / originalWidth; height = originalHeight * scale; } }
         public double Height { get => height; set { height = value; scale = height / originalHeight; width = originalWidth * scale; } }
-        public double LaserPower { get; set; } = 128;
+        public int LaserPower { get; set; } = 128;
 
         public abstract List<CutterInstruction> GetArduinoInstructions();
 
@@ -613,15 +613,16 @@ namespace LaunchPad
 
         public override List<CutterInstruction> GetArduinoInstructions()
         {
+            UpdatePoints();
             List<CutterInstruction> instructions = new List<CutterInstruction> { CutterInstruction.PenUpInstruction };
             foreach (PointCollection pointCollection in points)
             {
                 for (int pass = 0; pass < Passes; pass++)
                 {
-                    instructions.Add(new CutterInstruction(pointCollection.First()));
-                    instructions.Add(CutterInstruction.PenDownInstruction);
+                    instructions.Add(new CutterInstruction(pointCollection.First(),X,Y));
+                    instructions.Add(new CutterInstruction(LaserPower));
                     for (int i = 1; i < pointCollection.Count; i++)
-                        instructions.Add(new CutterInstruction(pointCollection[i]));
+                        instructions.Add(new CutterInstruction(pointCollection[i],X,Y));
                     instructions.Add(CutterInstruction.PenUpInstruction);
                 }
             }
@@ -725,6 +726,7 @@ namespace LaunchPad
 
         public override List<CutterInstruction> GetArduinoInstructions()
         {
+            UpdateBWMap();
             List<CutterInstruction> instructions = new List<CutterInstruction>();
             int width = bwMap.GetLength(0);
             int height = bwMap.GetLength(1);
@@ -737,19 +739,19 @@ namespace LaunchPad
                     {
                         if (bwMap[x, y] && !penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale)));
-                            instructions.Add(CutterInstruction.PenDownInstruction);
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale), X, Y));
+                            instructions.Add(new CutterInstruction(LaserPower));
                             penDown = true;
                         }
                         else if (x == width - 1 && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((width - 1) * scale, y * scale)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((width - 1) * scale, y * scale), X, Y));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
                         else if (!bwMap[x, y] && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((x - 1) * scale, y * scale)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((x - 1) * scale, y * scale), X, Y));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
@@ -761,19 +763,19 @@ namespace LaunchPad
                     {
                         if (bwMap[x, y] && !penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale)));
-                            instructions.Add(CutterInstruction.PenDownInstruction);
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale), X, Y));
+                            instructions.Add(new CutterInstruction(LaserPower));
                             penDown = true;
                         }
                         else if (x == 0 && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, y * scale)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, y * scale), X, Y));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
                         else if (!bwMap[x, y] && penDown)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((x + 1) * scale, y * scale)));
+                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((x + 1) * scale, y * scale), X, Y));
                             instructions.Add(CutterInstruction.PenUpInstruction);
                             penDown = false;
                         }
@@ -813,7 +815,6 @@ namespace LaunchPad
                         }
                         else if (!bwMap[x, y] && penDown)
                         {
-                            //System.Diagnostics.Debug.WriteLine($"{x - 1},{startX}");
                             Windows.UI.Xaml.Shapes.Rectangle rect = new Windows.UI.Xaml.Shapes.Rectangle() { Width = ((x - 1) - startX) * scale, Height = scale, Fill = new SolidColorBrush(Windows.UI.Colors.Black) };
                             Canvas.SetLeft(rect, startX * scale);
                             Canvas.SetTop(rect, y * scale);
@@ -856,24 +857,24 @@ namespace LaunchPad
 
     public class CutterInstruction
     {
-        const string PEN_UP_MESSAGE = "PenUp();";
-        const string PEN_DOWN_MESSAGE = "PenDown();";
-        const double velocityConstant = 1000;
+        const double velocityConstant = 1800;
 
         public readonly Windows.Foundation.Point Point;
         public readonly bool IsCoord;
-        public readonly bool PenDown;
+        public readonly int LaserPower;
 
-        public CutterInstruction(Windows.Foundation.Point point)
+        public CutterInstruction(Windows.Foundation.Point point, double offsetX, double offsetY)
         {
             IsCoord = true;
+            point.X += offsetX;
+            point.Y += offsetY;
             Point = point;
         }
 
-        public CutterInstruction(bool penDown)
+        public CutterInstruction(int laserPower)
         {
             IsCoord = false;
-            PenDown = penDown;
+            LaserPower = laserPower;
         }
 
         private double diffX, diffY, theta, vX, vY, t;
@@ -891,7 +892,7 @@ namespace LaunchPad
             }
             else
             {
-                msg = PenDown ? PEN_DOWN_MESSAGE : PEN_UP_MESSAGE;
+                msg = $"SetPower({LaserPower});";
             }
             return msg;
         }
@@ -921,9 +922,7 @@ namespace LaunchPad
             return displacement * velocityConstant;
         }
 
-        public static readonly CutterInstruction PenUpInstruction = new CutterInstruction(false);
-        public static readonly CutterInstruction PenDownInstruction = new CutterInstruction(true);
-        public static readonly CutterInstruction ReturnToOriginInstruction = new CutterInstruction(new Windows.Foundation.Point(0, 0));
-        public const string ZeroString = "(0,0,0);";
+        public static readonly CutterInstruction PenUpInstruction = new CutterInstruction(0);
+        public static readonly CutterInstruction ReturnToOriginInstruction = new CutterInstruction(new Windows.Foundation.Point(0, 0), 0, 0);
     }
 }

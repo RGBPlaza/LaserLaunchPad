@@ -89,7 +89,7 @@
                     <TextBlock Text="Scale:" Grid.Row="5" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                     <TextBox Name="ScaleTextBox" Grid.Row="5" Grid.Column="1" TextChanged="ScaleTextBox_TextChanged"/>
                     <TextBlock Text="Laser Power:" Grid.Row="6" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                    <Slider Name="LaserPowerSlider" Grid.Row="7" Grid.ColumnSpan="2" Maximum="256" ValueChanged="LaserPowerSlider_ValueChanged"/>
+                    <Slider Name="LaserPowerSlider" Grid.Row="7" Grid.ColumnSpan="2" Maximum="255" ValueChanged="LaserPowerSlider_ValueChanged"/>
                 </Grid>
                 <Grid Name="VectorPropertiesGrid" RowSpacing="8">
                     <Grid.RowDefinitions>
