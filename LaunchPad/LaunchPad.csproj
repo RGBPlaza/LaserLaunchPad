@@ -129,8 +129,7 @@
     <AppxManifest Include="Package.appxmanifest">
       <SubType>Designer</SubType>
     </AppxManifest>
-    <None Include="embeddedSide2\embeddedSide2.ino" />
-    <None Include="embeddedSide\embeddedSide.ino" />
+    <None Include="embeddedSide2.ino" />
     <None Include="LaunchPad_TemporaryKey.pfx" />
   </ItemGroup>
   <ItemGroup>

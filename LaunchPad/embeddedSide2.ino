@@ -8,13 +8,18 @@
 #define Y2 11
 #define Y3 12
 
-#define PEN 13
+#define PEN 3
 
-bool isFinishing = false;
 String instruction;
+bool awaitingInstruction = false;
 bool penDown = false;
 double posX = 0;
 double posY = 0;
+double vX = 0;
+double vY = 0;
+double t = 0;
+double sX = 0;
+double sY = 0;
 
 void setup()
 {
@@ -28,138 +33,106 @@ void setup()
   pinMode(Y2, OUTPUT);
   pinMode(Y3, OUTPUT);
 
-  pinMode(PEN, OUTPUT);
+  analogWrite(PEN, 0);
 
   Serial.begin(9600);
-  Serial.write(":)");
 
 }
 
+unsigned int timeCounter = 0;
 void loop(){
-  // 'Tis mostly an event driven program
+  if(!awaitingInstruction){
+    // X-AXIS
+    if(vX != 0){
+      // Set new motor phases
+      if(sX < 0) {
+        sX += 8;
+      }
+      if(sX > 8){
+        sX -= 8; 
+      }
+  
+      // Change motor position
+      SetPhaseX((int)floor(sX));
+      
+      sX += vX;
+  
+      // Update distance travelled
+      posX += (vX/1000);
+    }
+
+    // Y-AXIS
+    if(vY != 0){
+      // Set new motor phases
+      if(sY < 0) {
+        sY += 8;
+      }
+      if(sY > 8){
+        sY -= 8; 
+      }
+  
+      // Change motor position
+      SetPhaseY((int)floor(sY));
+      
+      // Takeaway velocity (rather than add) due to motor direction.
+      sY -= vY;
+  
+      // Update distance travelled
+      posY += (vY/1000);
+    }
+    
+    if(timeCounter >= t){
+      //SendPosition();
+      //vX = 0;
+      //vY = 0;
+      RequestInstruction();
+    }
+    else {
+      timeCounter++;
+    }
+  }
+  delay(1);
+}
+
+void SendPosition(){
+  if(Serial.availableForWrite()){
+    char penState = penDown ? '1' : '0';
+    String msg = '(' + String(posX,2) + ',' + String(posY,2) + ',' + penState + ')';
+    Serial.print(msg);
+  }
+}
+
+void RequestInstruction(){
+  if(Serial.availableForWrite()){
+    Serial.write(":)");
+    awaitingInstruction = true;
+  }
 }
 
 void serialEvent() {
-  if (Serial.available() > 0) {
+  if (Serial.available() > 0 && awaitingInstruction) {
     // All strings sent to arduino end with ')'
     instruction = Serial.readStringUntil(';');
-    if (instruction == "That will do, cheers bud :)") {
-      isFinishing = true;
-      if (posX != 0 && posY != 0) {
-        MoveTo(0,0, false);
-      }
-      if (penDown) {
-        digitalWrite(PEN, LOW);
-        penDown = false;
-      }
-      Serial.write("(:");
-      Serial.end();
+    if (instruction.substring(0,8) == "SetPower") {
+      vX = 0;
+      vY = 0;
+      int laserPower = instruction.substring(9,instruction.length()).toInt();
+      analogWrite(PEN, laserPower);
+      penDown = laserPower > 0;
+      RequestInstruction();
     }
-    else if (instruction == "PenUp()") {
-      if (penDown) {
-        digitalWrite(PEN, LOW);
-        penDown = false;
-      }
-      Serial.write(":)");
+    else { 
+      // All remaining possible inputs are velocity vectors
+      int commaIndex0 = instruction.indexOf(',');
+      int commaIndex1 = instruction.lastIndexOf(',');
+      vX = instruction.substring(1, commaIndex0).toDouble() * 1.5;
+      vY = instruction.substring(commaIndex0 + 1, commaIndex1).toDouble() * 1.5;
+      t = instruction.substring(commaIndex1 + 1, instruction.length()).toDouble();
+      timeCounter = 0;
+      awaitingInstruction = false;
     }
-    else if (instruction == "PenDown()") {
-      if (!penDown) {
-        digitalWrite(PEN, HIGH);
-        penDown = true;
-      }
-      Serial.write(":)");
-    }
-    else { // All remaining possible inputs are coordinates
-      int commaIndex = instruction.indexOf(',');
-      double nextX = instruction.substring(1, commaIndex).toDouble();
-      double nextY = instruction.substring(commaIndex+1, instruction.length() - 1).toDouble();
-      MoveTo(nextX, nextY, penDown);
-    }
-    Serial.flush();
   }
 }
-
-double sX = 0;
-double sY = 0;
-void MoveTo(double nextX, double nextY, bool calcVelocity) {
-  double vX;
-  double vY;
-  double diffX = round((nextX - posX) * 100) / 100;
-  double diffY = round((nextY - posY) * 100) / 100;
-  
-  if(calcVelocity){  
-    // Caluclate component velocities
-    if (diffX != 0 && diffY != 0) {
-      double theta = atan(diffY / diffX);
-      vX = (diffX > 0) ? cos(theta): -cos(theta);
-      //Serial.print(vX);
-      //vX = (vX > 0.01) ? vX : 0; 
-      vY = (diffY > 0) ? sin(theta) : -sin(theta);
-      //Serial.print(vY);
-      //vY = (vX > 0.01) ? vY : 0; 
-    }
-    else if (diffY == 0 && diffX != 0) {
-      // Horizontal
-      vX = (diffX > 0) ? 1 : -1;
-      vY = 0;
-    }
-    else if (diffX == 0 && diffY != 0) {
-      // Vertical
-      vX = 0;
-      vY = (diffY > 0) ? 1 : -1;
-    }
-    else {
-      // Same Location
-      vX = 0;
-      vY = 0;
-      Serial.write(":)");
-      return;
-    }
-  }
-  else {
-    vX = (diffX > 0) ? 1 : -1;
-    vY = (diffY > 0) ? 1 : -1;
-  }
-  
-  while(vX != 0 || vY != 0){
-    // Check if motors still need moving
-    if ((posX >= nextX && vX > 0) || (posX <= nextX && vX < 0)) {
-      vX = 0;
-    }
-    if ((posY >= nextY && vY > 0) || (posY <= nextY && vY < 0)) {
-      vY = 0;
-    }
-    // Set new motor phases
-    if(sX < 0) {
-      sX += 8;
-    }
-    if(sX > 8){
-      sX -= 8; 
-    }
-    if(sY < 0) {
-      sY += 8;
-    }
-    if(sY > 8){
-      sY -= 8; 
-    }
-    
-    SetPhaseX((int)floor(sX));
-    SetPhaseY((int)floor(sY));
-    // Takeaway velocity (rather than add) due to motor direction.
-    sX -= vX;
-    sY -= vY;
-
-    // Update distance travelled
-    posX += (vX/500);
-    posY += (vY/500);
-
-    delay(1);
-  }
-  if (!isFinishing) {
-    Serial.write(":)");
-  }
-}
-
 void SetPhaseX(int s) {
   switch (s) {
     case 0:
