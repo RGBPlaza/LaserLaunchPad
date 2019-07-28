@@ -158,11 +158,6 @@ namespace LaunchPad
 
 
         // Cut-Time Variables
-        private double laserX = 0;
-        private double laserY = 0;
-        private bool laserOn = false;
-        private double vX = 0;
-        private double vY = 0;
         private double destX, destY = 0;
 
         private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
@@ -180,15 +175,11 @@ namespace LaunchPad
                         if (currentInstruction.IsCoord)
                         {
                             msg = currentInstruction.GetArduinoMessage(destX, destY);
-                            (vX, vY) = currentInstruction.GetComponentVelocities(destX, destY);
-                            (laserX, laserY) = (destX, destY);
                             (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
                         }
                         else
                         {
                             msg = currentInstruction.GetArduinoMessage();
-                            laserOn = currentInstruction.LaserPower > 0;
-                            (vX, vY) = (0, 0);
                         }
                         instructions.Remove(currentInstruction);
                     } while (string.IsNullOrWhiteSpace(msg) && instructions.Any());
@@ -200,7 +191,6 @@ namespace LaunchPad
                 {
                     //cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.ZeroString)); // Send Speed of Zero
                     System.Diagnostics.Debug.WriteLine("Print Complete");
-                    (vX, vY) = (0, 0);
                 }
             }
             else
@@ -857,7 +847,7 @@ namespace LaunchPad
 
     public class CutterInstruction
     {
-        const double velocityConstant = 1800;
+        const double scaleConst = 100;
 
         public readonly Windows.Foundation.Point Point;
         public readonly bool IsCoord;
@@ -877,16 +867,15 @@ namespace LaunchPad
             LaserPower = laserPower;
         }
 
-        private double diffX, diffY, theta, vX, vY, t;
+        private double diffX, diffY;
         public string GetArduinoMessage(double currentX = 0, double currentY = 0)
         {
             string msg;
             if (IsCoord)
             {
-                (vX, vY) = GetComponentVelocities(currentX, currentY);
-                t = GetTime(currentX, currentY);
-                if (t != 0)
-                    msg = $"({vX},{vY},{t});";
+                (diffX, diffY) = ((Point.X - currentX) * scaleConst, (Point.Y - currentY) * scaleConst);
+                if (diffX != 0 || diffY != 0)
+                    msg = $"MoveBy({diffX},{diffY});";
                 else
                     return null;
             }
@@ -895,31 +884,6 @@ namespace LaunchPad
                 msg = $"SetPower({LaserPower});";
             }
             return msg;
-        }
-
-        public (double, double) GetComponentVelocities(double currentX, double currentY)
-        {
-            diffX = Point.X - currentX;
-            diffY = Point.Y - currentY;
-            if (diffX != 0 || diffY != 0)
-            {
-                theta = Math.Atan2(diffY, diffX);
-                vX = Math.Cos(theta);
-                vY = Math.Sin(theta);
-            }
-            else  // Same Location
-            {
-                (vX, vY) = (0, 0);
-            }
-            return (vX, vY);
-        }
-
-        public double GetTime(double currentX, double currentY)
-        {
-            diffX = Point.X - currentX;
-            diffY = Point.Y - currentY;
-            double displacement = Math.Sqrt(Math.Pow(diffX, 2) + Math.Pow(diffY, 2));
-            return displacement * velocityConstant;
         }
 
         public static readonly CutterInstruction PenUpInstruction = new CutterInstruction(0);
