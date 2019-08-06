@@ -29,7 +29,10 @@ namespace LaunchPad
             filePicker = new FileOpenPicker();
             designs = new List<Design>();
             cutterSerial = new SerialPortInput();
-            cutterSerial.MessageReceived += CutterSerial_MessageReceived;
+            instructionTimer = new Timer();
+            instructionTimer.Elapsed += InstructionTimer_Elapsed;
+            instructionTimer.AutoReset = false;
+            //cutterSerial.MessageReceived += CutterSerial_MessageReceived;
         }
 
         private StorageFile imageFile;
@@ -37,6 +40,7 @@ namespace LaunchPad
         private readonly List<Design> designs;
         private Design selectedDesign;
         private static SerialPortInput cutterSerial;
+        private Timer instructionTimer;
 
         private async void LoadRasterButton_Click(object sender, RoutedEventArgs e)
         {
@@ -137,30 +141,68 @@ namespace LaunchPad
             UpdatePreview();
         }
 
+
+
+        // Cut-Time Variables
+        private double destX, destY = 0;
         private List<CutterInstruction> instructions = new List<CutterInstruction>();
+
         private void PrintButton_Click(object sender, RoutedEventArgs e)
         {
             if (instructions != null && cutterSerial != null)
             {
                 instructions.Clear();
-                if (!cutterSerial.IsConnected)
+                foreach (Design design in designs)
                 {
-                    foreach (Design design in designs)
-                    {
-                        instructions.AddRange(design.GetArduinoInstructions());
-                    }
-                    instructions.Add(CutterInstruction.PenUpInstruction);
-                    instructions.Add(CutterInstruction.ReturnToOriginInstruction);
-                    cutterSerial.Connect();
+                    instructions.AddRange(design.GetArduinoInstructions());
                 }
+                instructions.Add(CutterInstruction.PenUpInstruction);
+                instructions.Add(CutterInstruction.ReturnToOriginInstruction);
+
+                if (!cutterSerial.IsConnected)
+                    cutterSerial.Connect();
+
+                instructionTimer.Interval = 1000;
+                instructionTimer.Start();
+
             }
         }
 
+        private void InstructionTimer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            instructionTimer.Stop();
+            if (instructions.Any())
+            {
+                string msg;
+                double t;
+                CutterInstruction currentInstruction;
+                do
+                {
+                    currentInstruction = instructions.First();
+                    if (currentInstruction.IsCoord)
+                    {
+                        msg = currentInstruction.GetArduinoMessage(destX, destY);
+                        t = currentInstruction.GetTime(destX, destY);
+                        (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
+                    }
+                    else
+                    {
+                        msg = currentInstruction.GetArduinoMessage();
+                        t = 0.1;
+                    }
+                    instructions.Remove(currentInstruction);
+                } while (string.IsNullOrWhiteSpace(msg) && instructions.Any());
 
-        // Cut-Time Variables
-        private double destX, destY = 0;
+                System.Diagnostics.Debug.WriteLine(msg);
+                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
+                instructionTimer.Interval = t;
+                instructionTimer.Start();
+            }
+            else
+                cutterSerial.SendMessage(Encoding.ASCII.GetBytes(CutterInstruction.StopMessage));
+        }
 
-        private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
+        /*private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
         {
             string resp = Encoding.ASCII.GetString(e.Data);
             if (resp == ":)")
@@ -197,7 +239,7 @@ namespace LaunchPad
             {
                 System.Diagnostics.Debug.WriteLine(resp);
             }
-        }
+        }*/
 
         private async void PortComboBox_DropDownOpened(object sender, object e)
         {
@@ -334,7 +376,7 @@ namespace LaunchPad
             {
                 DeviceInformation info = (DeviceInformation)PortComboBox.SelectedItem;
                 string portName = info.Name.Substring(info.Name.IndexOf("COM"), 4);
-                cutterSerial.SetPort(portName, 9600);
+                cutterSerial.SetPort(portName, 115200);
             }
         }
     }
@@ -867,15 +909,16 @@ namespace LaunchPad
             LaserPower = laserPower;
         }
 
-        private double diffX, diffY;
+        private double diffX, diffY, theta, vX, vY;
         public string GetArduinoMessage(double currentX = 0, double currentY = 0)
         {
             string msg;
             if (IsCoord)
             {
-                (diffX, diffY) = ((Point.X - currentX) * scaleConst, (Point.Y - currentY) * scaleConst);
-                if (diffX != 0 || diffY != 0)
-                    msg = $"MoveBy({diffX},{diffY});";
+                (vX, vY) = GetComponentVelocities(currentX, currentY);
+                
+                if (GetTime(currentX, currentY) != 0)
+                    msg = $"({vX},{vY});";
                 else
                     return null;
             }
@@ -886,7 +929,33 @@ namespace LaunchPad
             return msg;
         }
 
+        public (double, double) GetComponentVelocities(double currentX, double currentY)
+        {
+            diffX = Point.X - currentX;
+            diffY = Point.Y - currentY;
+            if (diffX != 0 || diffY != 0)
+            {
+                theta = Math.Atan2(diffY, diffX);
+                vX = Math.Cos(theta);
+                vY = Math.Sin(theta);
+            }
+            else  // Same Location
+            {
+                (vX, vY) = (0, 0);
+            }
+            return (vX, vY);
+        }
+
+        public double GetTime(double currentX, double currentY)
+        {
+            diffX = Point.X - currentX;
+            diffY = Point.Y - currentY;
+            double displacement = Math.Sqrt(Math.Pow(diffX, 2) + Math.Pow(diffY, 2));
+            return displacement * scaleConst;
+        }
+
         public static readonly CutterInstruction PenUpInstruction = new CutterInstruction(0);
         public static readonly CutterInstruction ReturnToOriginInstruction = new CutterInstruction(new Windows.Foundation.Point(0, 0), 0, 0);
+        public static string StopMessage = "(0,0);";
     }
 }
