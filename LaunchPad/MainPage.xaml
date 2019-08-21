@@ -42,7 +42,11 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Name="PrintButton" Content="Print" FontFamily="Bahnschrift" Click="PrintButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
+                <StackPanel Orientation="Horizontal" Spacing="16">
+                    <Button Name="PrintButton" Content="Print" FontFamily="Bahnschrift" Click="PrintButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
+                    <Button Name="StopButton" Content="Stop" FontFamily="Bahnschrift" Click="StopButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
+                    <Button Name="NextButton" Content="Next" FontFamily="Bahnschrift" Click="NextButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
+                </StackPanel>
             </StackPanel>
         </RelativePanel>
 
@@ -101,7 +105,7 @@
                     </Grid.RowDefinitions>
                     <TextBlock Text="SVG Properties" FontFamily="Bahnschrift"/>
                     <TextBlock Text="Smoothness:" Grid.Row="1"/>
-                    <Slider Name="SmoothnessSlider" Grid.Row="2" Minimum="1" Maximum="20" ValueChanged="SmoothnessSlider_ValueChanged"/>
+                    <Slider Name="SmoothnessSlider" Grid.Row="2" Minimum="1" Maximum="50" ValueChanged="SmoothnessSlider_ValueChanged"/>
                     <TextBlock Text="Passes:" Grid.Row="3"/>
                     <Slider Name="PassesSlider" Grid.Row="4" Minimum="1" Maximum="5" ValueChanged="PassesSlider_ValueChanged"/>
                 </Grid>
@@ -112,13 +116,22 @@
                         <RowDefinition Height="auto"/>
                         <RowDefinition Height="auto"/>
                         <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
+                        <RowDefinition Height="auto"/>
                     </Grid.RowDefinitions>
                     <TextBlock Text="Raster Properties" FontFamily="Bahnschrift"/>
                     <TextBlock Text="Threshold:" Grid.Row="1"/>
                     <Slider Name="ThresholdSlider" Grid.Row="2" ValueChanged="ThresholdSlider_ValueChanged" Maximum="256"/>
-                    <TextBlock Text="Negation:" Grid.Row="3"/>
-                    <ToggleSwitch Name="NegateSwitch" Toggled="NegateSwitch_Toggled" OnContent="Negative Space" OffContent="Positive Space" Grid.Row="4"/>
+                    <TextBlock Text="Shades:" Grid.Row="3"/>
+                    <Slider Name="ShadesSlider" Grid.Row="4" ValueChanged="ShadesSlider_ValueChanged" Minimum="2" Maximum="16"/>
+                    <TextBlock Text="Negation:" Grid.Row="5"/>
+                    <ToggleSwitch Name="NegateSwitch" Toggled="NegateSwitch_Toggled" OnContent="Negative Space" OffContent="Positive Space" Grid.Row="6"/>
                 </Grid>
+                <Button Name="DeleteButton" Style="{ThemeResource ButtonRevealStyle}" Click="DeleteButton_Click">
+                    <Button.Content>
+                        <SymbolIcon Symbol="Delete"/>
+                    </Button.Content>
+                </Button>
             </StackPanel>
         </ScrollViewer>
 

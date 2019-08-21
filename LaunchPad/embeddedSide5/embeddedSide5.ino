@@ -1,5 +1,4 @@
 #include <AccelStepper.h>
-#include <Queue.h>
 
 #define X_STEP 2
 #define X_DIR 5
@@ -23,20 +22,18 @@ struct Instruction {
   double vY;
   double t;
 };
-DataQueue<Instruction> instructions(200);
 
 void setup()
 {
 
   pinMode(ENABLE, OUTPUT);
-  digitalWrite(ENABLE, LOW);
   analogWrite(PEN, 0);
   
   X.setMaxSpeed(MAX_SPEED);
   YA.setMaxSpeed(MAX_SPEED);
   YB.setMaxSpeed(MAX_SPEED);
 
-  Serial.begin(115200);
+  Serial.begin(2000000);
 
 }
 
@@ -45,12 +42,13 @@ double dY = 0;
 bool stopReceived = false;
 void loop() {
   if (((X.currentPosition() >= dX && X.speed() > 0) || (X.currentPosition() <= dX && X.speed() < 0) || X.speed() == 0) && ((YA.currentPosition() >= dY && YA.speed() > 0) || (YA.currentPosition() <= dY && YA.speed() < 0) || YA.speed() == 0)){
-    X.setSpeed(0);
-    YA.setSpeed(0);
-    YB.setSpeed(0);
-  }
-  if(X.speed() == 0 && YA.speed() == 0 && !instructions.isEmpty()){
-      ExecuteInstruction(instructions.dequeue());
+    digitalWrite(ENABLE,HIGH);
+    Instruction nextInstruction = FetchInstruction();
+    if(!stopReceived)
+      RequestInstruction();
+    else
+      stopReceived = false;
+    ExecuteInstruction(nextInstruction);
   }
   else {
     X.runSpeed();
@@ -60,19 +58,23 @@ void loop() {
 }
 
 void RequestInstruction() {
-  if (Serial.availableForWrite() && !instructions.isFull() && !stopReceived) {
+  if (Serial.availableForWrite() && !stopReceived) {
     Serial.write(":)");   
   }
 }
 
-void serialEvent() {
-  if (Serial.available() > 0) {
-    // All strings sent to arduino end with ';'
-    String instruction = Serial.readStringUntil(';');
-    stopReceived = false;
+Instruction FetchInstruction() {
+    String instruction = "";
+    do {
+    instruction = Serial.readStringUntil(';');
+    } while (instruction.length() == 0);
     if (instruction.substring(0, 8) == "SetPower") {
       double laserPower = instruction.substring(9, instruction.length()).toDouble();
-      instructions.enqueue({laserPower, 0, -1});
+      return (Instruction){laserPower, 0, -1};
+    }
+    else if (instruction == "STOP"){
+        stopReceived = true;
+        return (Instruction){0, 0, 0};
     }
     else {
       // All remaining possible inputs are velocity vectors
@@ -80,23 +82,23 @@ void serialEvent() {
       int commaIndex1 = instruction.lastIndexOf(',');
       double vX = instruction.substring(1, commaIndex0).toDouble();
       double vY = instruction.substring(commaIndex0 + 1, commaIndex1).toDouble() * -1;
-      double t = instruction.substring(commaIndex1 + 1, instruction.length()).toDouble() * 4;
-      instructions.enqueue({vX, vY, t});
-      if(t == 0){
-        stopReceived = true;
-      }
+      double t = instruction.substring(commaIndex1 + 1, instruction.length()).toDouble();
+      return (Instruction){vX, vY, t};
     }
-  }
 }
 
-bool ExecuteInstruction(Instruction instruction) {
+void ExecuteInstruction(Instruction instruction) {
   if (instruction.t <= 0) {
     int laserPower = (int)instruction.vX;
-    analogWrite(PEN, laserPower);
+    if (laserPower == 255)
+      digitalWrite(PEN, HIGH);
+    else
+      analogWrite(PEN, laserPower);
   }
   else {
-    dX = instruction.vX * instruction.t;
-    dY = instruction.vY * instruction.t;
+    digitalWrite(ENABLE, LOW);
+    dX = instruction.vX * instruction.t * MAX_SPEED / 1000;
+    dY = instruction.vY * instruction.t * MAX_SPEED / 1000;
     X.setCurrentPosition(0);
     YA.setCurrentPosition(0);
     YB.setCurrentPosition(0);
@@ -104,7 +106,4 @@ bool ExecuteInstruction(Instruction instruction) {
     YA.setSpeed(MAX_SPEED * instruction.vY);
     YB.setSpeed(MAX_SPEED * instruction.vY);
   }
-  RequestInstruction();
-  
-  return false;
 }

@@ -23,7 +23,7 @@ struct Instruction {
   double vY;
   double t;
 };
-DataQueue<Instruction> instructions(200);
+DataQueue<Instruction> instructions(400);
 
 void setup()
 {
@@ -43,6 +43,7 @@ void setup()
 double dX = 0;
 double dY = 0;
 bool stopReceived = false;
+bool silenceRequested = false;
 void loop() {
   if (((X.currentPosition() >= dX && X.speed() > 0) || (X.currentPosition() <= dX && X.speed() < 0) || X.speed() == 0) && ((YA.currentPosition() >= dY && YA.speed() > 0) || (YA.currentPosition() <= dY && YA.speed() < 0) || YA.speed() == 0)){
     X.setSpeed(0);
@@ -59,9 +60,21 @@ void loop() {
   }
 }
 
-void RequestInstruction() {
+void RequestInstructions() {
   if (Serial.availableForWrite() && !instructions.isFull() && !stopReceived) {
     Serial.write(":)");   
+  }
+}
+
+void RequestSilence() {
+  if (Serial.availableForWrite()) {
+    Serial.write(":(");   
+  }
+}
+
+void ConfirmFinished() {
+  if (Serial.availableForWrite()) {
+    Serial.write("(:");   
   }
 }
 
@@ -74,6 +87,10 @@ void serialEvent() {
       double laserPower = instruction.substring(9, instruction.length()).toDouble();
       instructions.enqueue({laserPower, 0, -1});
     }
+    else if (instruction == "STOP"){
+        instructions.enqueue({0, 0, 0});
+        stopReceived = true;
+    }
     else {
       // All remaining possible inputs are velocity vectors
       int commaIndex0 = instruction.indexOf(',');
@@ -82,14 +99,15 @@ void serialEvent() {
       double vY = instruction.substring(commaIndex0 + 1, commaIndex1).toDouble() * -1;
       double t = instruction.substring(commaIndex1 + 1, instruction.length()).toDouble() * 4;
       instructions.enqueue({vX, vY, t});
-      if(t == 0){
-        stopReceived = true;
-      }
+    }
+    if (instructions.item_count() >= 40 && !silenceRequested){
+      RequestSilence();
+      silenceRequested = true;
     }
   }
 }
 
-bool ExecuteInstruction(Instruction instruction) {
+void ExecuteInstruction(Instruction instruction) {
   if (instruction.t <= 0) {
     int laserPower = (int)instruction.vX;
     analogWrite(PEN, laserPower);
@@ -104,7 +122,11 @@ bool ExecuteInstruction(Instruction instruction) {
     YA.setSpeed(MAX_SPEED * instruction.vY);
     YB.setSpeed(MAX_SPEED * instruction.vY);
   }
-  RequestInstruction();
-  
-  return false;
+  if(instructions.item_count() < 40 && !stopReceived && silenceRequested){
+    RequestInstructions();
+    silenceRequested = false;
+  }
+  if(instructions.isEmpty() && stopReceived){
+    ConfirmFinished();
+  }
 }
