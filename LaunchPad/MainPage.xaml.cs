@@ -198,8 +198,10 @@ namespace LaunchPad
         private void CutterSerial_MessageReceived(object sender, MessageReceivedEventArgs e)
         {
             string resp = Encoding.ASCII.GetString(e.Data);
-            if (resp == ":)")
+            if (resp == "+")
                 SendNextInstruction();
+            else
+                System.Diagnostics.Debug.WriteLine(resp);
         }
 
 
@@ -212,19 +214,25 @@ namespace LaunchPad
                 do
                 {
                     currentInstruction = instructions.First();
-                    if (currentInstruction.IsCoord)
+                    if (currentInstruction.type == CutterInstruction.InstructionType.velocityTime)
                     {
                         msg = currentInstruction.GetArduinoMessage(destX, destY);
                         (destX, destY) = (currentInstruction.Point.X, currentInstruction.Point.Y);
                     }
-                    else
+                    else if (currentInstruction.type == CutterInstruction.InstructionType.printLine)
+                    {
+                        msg = currentInstruction.GetArduinoMessage(destX);
+                        destX = currentInstruction.Point.X;
+                    }
+                    else 
                     {
                         msg = currentInstruction.GetArduinoMessage();
                     }
                     instructions.Remove(currentInstruction);
                 } while (string.IsNullOrWhiteSpace(msg) && instructions.Any());
-
+                System.Diagnostics.Debug.WriteLine(msg);
                 cutterSerial.SendMessage(Encoding.ASCII.GetBytes(msg));
+
             }
             else
             {
@@ -826,46 +834,53 @@ namespace LaunchPad
         {
             UpdateBWMap();
             List<CutterInstruction> instructions = new List<CutterInstruction>();
-            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(X, Y),0,0));
             int width = shadeMap.GetLength(0);
             int height = shadeMap.GetLength(1);
             byte previousShade;
+            int startX;
+            StringBuilder stringBuilder = new StringBuilder();
             for (int y = 0; y < height; y++)
             {
+                stringBuilder.Clear();
+                instructions.Add(CutterInstruction.PenUpInstruction);
                 if (y % 2 == 0)
                 {
+                    startX = 0;
                     previousShade = shadeMap[0, y];
-                    for (int x = 0; x < width; x ++)
+                    instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, y * scale), X, Y));
+                    instructions.Add(new CutterInstruction(width * scale, width, X));
+
+                    for (int x = 0; x < width; x += 1)
                     {
-                        if (x == width - 1 && previousShade > 0)
+                        if (x == width - 1)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point((width - 1) * scale, y * scale), X, Y));
-                            instructions.Add(CutterInstruction.PenUpInstruction);
-                            break;
+                            instructions.Add(new CutterInstruction(Math.Floor(previousShade / 255d * LaserPower), (width - startX)));
                         }
-                        if (shadeMap[x, y] != previousShade)
+                        else if (shadeMap[x, y] != previousShade)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale), X, Y));
-                            instructions.Add(new CutterInstruction(LaserPower * shadeMap[x, y] / 255));
+                            instructions.Add(new CutterInstruction(Math.Floor(previousShade / 255d * LaserPower), (x - startX)));
+                            startX = x;
                             previousShade = shadeMap[x, y];
                         }
                     }
                 }
                 else
                 {
+                    instructions.Add(new CutterInstruction(new Windows.Foundation.Point(width * scale, y * scale), X, Y));
+                    instructions.Add(new CutterInstruction(0, width, X));
+                    startX = width - 1;
                     previousShade = shadeMap[width - 1, y];
                     for (int x = width - 1; x >= 0; x--)
                     {
-                        if (x == 0 && previousShade > 0)
+                        if (x == 0)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(0, y * scale), X, Y));
-                            instructions.Add(CutterInstruction.PenUpInstruction);
-                            break;
+                            instructions.Add(new CutterInstruction(Math.Floor(previousShade / 255d * LaserPower), (startX + 1)));
+
                         }
-                        if (shadeMap[x, y] != previousShade)
+                        else if (shadeMap[x, y] != previousShade)
                         {
-                            instructions.Add(new CutterInstruction(new Windows.Foundation.Point(x * scale, y * scale), X, Y));
-                            instructions.Add(new CutterInstruction(LaserPower * shadeMap[x, y] / 255));
+                            instructions.Add(new CutterInstruction(Math.Floor(previousShade / 255d * LaserPower), (startX - x)));
+                            startX = x;
                             previousShade = shadeMap[x, y];
                         }
                     }
@@ -944,14 +959,22 @@ namespace LaunchPad
     public class CutterInstruction
     {
         const double scaleConst = 40000 / 185;
+        public enum InstructionType
+        {
+            velocityTime,
+            penPower,
+            printLine,
+            printLineSegment
+        }
 
         public readonly Windows.Foundation.Point Point;
-        public readonly bool IsCoord;
+        public readonly InstructionType type;
         public readonly int LaserPower;
+        public int NominalWidth;
 
-        public CutterInstruction(Windows.Foundation.Point point, double offsetX, double offsetY)
+        public CutterInstruction(Windows.Foundation.Point point, double offsetX = 0, double offsetY = 0)
         {
-            IsCoord = true;
+            type = InstructionType.velocityTime;
             point.X += offsetX;
             point.Y += offsetY;
             Point = point;
@@ -959,15 +982,29 @@ namespace LaunchPad
 
         public CutterInstruction(double laserPower)
         {
-            IsCoord = false;
+            type = InstructionType.penPower;
             LaserPower = (int)laserPower;
+        }
+
+        public CutterInstruction(double targetX, int nominalWidth,  double offestX = 0)
+        {
+            type = InstructionType.printLine;
+            Point = new Windows.Foundation.Point(targetX + offestX, 0);
+            NominalWidth = nominalWidth;
+        }
+
+        public CutterInstruction(double laserPower, int count)
+        {
+            type = InstructionType.printLineSegment;
+            LaserPower = (int)laserPower;
+            NominalWidth = count;
         }
 
         private double diffX, diffY, theta, vX, vY, t;
         public string GetArduinoMessage(double currentX = 0, double currentY = 0)
         {
             string msg;
-            if (IsCoord)
+            if (type == InstructionType.velocityTime)
             {
                 (vX, vY) = GetComponentVelocities(currentX, currentY);
                 t = GetTime(currentX, currentY);
@@ -977,9 +1014,19 @@ namespace LaunchPad
                 else
                     return null;
             }
-            else
+            else if (type == InstructionType.penPower)
             {
                 msg = $"SetPower({LaserPower});";
+            }
+            else if (type == InstructionType.printLineSegment)
+            {
+                msg = $"{LaserPower}:{NominalWidth}!";
+            }
+            else
+            {
+                diffX = Point.X - currentX;
+                t = Math.Round(diffX * scaleConst, 2);
+                msg = $"PrintLine({t},{NominalWidth});";
             }
             return msg;
         }
@@ -1006,7 +1053,7 @@ namespace LaunchPad
             diffX = Point.X - currentX;
             diffY = Point.Y - currentY;
             double displacement = Math.Sqrt(Math.Pow(diffX, 2) + Math.Pow(diffY, 2));
-            return Math.Round(displacement * scaleConst,1);
+            return Math.Round(displacement * scaleConst,2);
         }
 
         public static readonly CutterInstruction PenUpInstruction = new CutterInstruction(0);
