@@ -112,11 +112,11 @@ namespace LaunchPad
             }
             PreviewCanvas.Children.Add(laserCircle);
 
-            XPosTextBox.Text = selectedDesign.X.ToString();
-            YPosTextBox.Text = selectedDesign.Y.ToString();
-            WidthTextBox.Text = selectedDesign.Width.ToString();
-            HeightTextBox.Text = selectedDesign.Height.ToString();
-            ScaleTextBox.Text = selectedDesign.Scale.ToString();
+            XPosTextBox.Text = Math.Round(selectedDesign.X,4).ToString();
+            YPosTextBox.Text = Math.Round(selectedDesign.Y,4).ToString();
+            WidthTextBox.Text = Math.Round(selectedDesign.Width,4).ToString();
+            HeightTextBox.Text = Math.Round(selectedDesign.Height,4).ToString();
+            ScaleTextBox.Text = Math.Round(selectedDesign.Scale,4).ToString();
             LaserPowerSlider.Value = selectedDesign.LaserPower;
 
             if (selectedDesign.GetType() == typeof(SVGDesign))
@@ -250,68 +250,7 @@ namespace LaunchPad
             string aqsFilter = SerialDevice.GetDeviceSelector();
             var devices = await DeviceInformation.FindAllAsync(aqsFilter);
             if (devices.Any())
-                PortComboBox.ItemsSource = devices;
-        }
-
-        private void XPosTextBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if(double.TryParse(XPosTextBox.Text,out double xPos))
-            {
-                if (xPos != selectedDesign.X)
-                {
-                    selectedDesign.X = xPos;
-                    UpdatePreview();
-                }
-            }
-        }
-
-        private void YPosTextBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (double.TryParse(YPosTextBox.Text, out double yPos))
-            {
-                if (yPos != selectedDesign.Y)
-                {
-                    selectedDesign.Y = yPos;
-                    UpdatePreview();
-                }
-            }
-        }
-
-        private void WidthTextBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (double.TryParse(WidthTextBox.Text, out double width))
-            {
-                if (width != selectedDesign.Width && width > 0)
-                {
-                    selectedDesign.Width = width;
-                    UpdatePreview();
-                }
-            }
-        }
-
-        private void HeightTextBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (double.TryParse(HeightTextBox.Text, out double height))
-            {
-                if (height != selectedDesign.Height && height > 0)
-                {
-                    selectedDesign.Height = height;
-                    UpdatePreview();
-                }
-            }
-        }
-
-        private void ScaleTextBox_TextChanged(object sender, TextChangedEventArgs e)
-        {
-            if (double.TryParse(ScaleTextBox.Text, out double scale))
-            {
-                if (scale != selectedDesign.Scale && scale > 0)
-                {
-                    selectedDesign.Scale = scale;
-                    UpdatePreview();
-                }
-            }
-
+                PortComboBox.ItemsSource = devices.Where(x => x.Name.Contains("COM"));
         }
 
         private void LaserPowerSlider_ValueChanged(object sender, RangeBaseValueChangedEventArgs e)
@@ -419,12 +358,72 @@ namespace LaunchPad
             SendNextInstruction();
         }
 
+        private void ScaleTextBox_KeyUp(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (double.TryParse(ScaleTextBox.Text, out double scale))
+            {
+                if (scale != selectedDesign.Scale && scale > 0)
+                {
+                    selectedDesign.Scale = scale;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void HeightTextBox_KeyUp(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (double.TryParse(HeightTextBox.Text, out double height))
+            {
+                if (height != selectedDesign.Height && height > 0)
+                {
+                    selectedDesign.Height = height;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void WidthTextBox_KeyUp(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (double.TryParse(WidthTextBox.Text, out double width))
+            {
+                if (width != selectedDesign.Width && width > 0)
+                {
+                    selectedDesign.Width = width;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void YPosTextBox_KeyUp(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (double.TryParse(YPosTextBox.Text, out double yPos))
+            {
+                if (yPos != selectedDesign.Y)
+                {
+                    selectedDesign.Y = yPos;
+                    UpdatePreview();
+                }
+            }
+        }
+
+        private void XPosTextBox_KeyUp(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if (double.TryParse(XPosTextBox.Text, out double xPos))
+            {
+                if (xPos != selectedDesign.X)
+                {
+                    selectedDesign.X = xPos;
+                    UpdatePreview();
+                }
+            }
+        }
+
         private void PortComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (PortComboBox.SelectedItem != null)
             {
                 DeviceInformation info = (DeviceInformation)PortComboBox.SelectedItem;
-                string portName = info.Name.Substring(info.Name.IndexOf("COM"), 4);
+                string portName = info.Name.Substring(info.Name.IndexOf("COM"), 5);
                 cutterSerial.SetPort(portName, 2000000);
             }
         }
@@ -958,7 +957,7 @@ namespace LaunchPad
 
     public class CutterInstruction
     {
-        const double scaleConst = 40000 / 185;
+        const double scaleConst = 168;
         public enum InstructionType
         {
             velocityTime,

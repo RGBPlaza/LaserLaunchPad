@@ -3,19 +3,15 @@
 #define X_STEP 2
 #define X_DIR 5
 
-#define YA_STEP 3
-#define YA_DIR 6
+#define Y_STEP 4
+#define Y_DIR 7
 
-#define YB_STEP 4
-#define YB_DIR 7
-
-#define PEN 11
+#define PEN 6
 #define ENABLE 8
-#define MAX_SPEED (200 * 4 * 1.5)
+#define MAX_SPEED (200 * 4 * 4)
 
 AccelStepper X(1, X_STEP, X_DIR);
-AccelStepper YA(1, YA_STEP, YA_DIR);
-AccelStepper YB(1, YB_STEP, YB_DIR);
+AccelStepper Y(1, Y_STEP, Y_DIR);
 
 enum InstructionType {
   penPower,
@@ -35,9 +31,8 @@ void setup()
   pinMode(ENABLE, OUTPUT);
   analogWrite(PEN, 0);
   
-  X.setMaxSpeed(MAX_SPEED);
-  YA.setMaxSpeed(MAX_SPEED);
-  YB.setMaxSpeed(MAX_SPEED);
+  X.setMaxSpeed(MAX_SPEED * 2);
+  Y.setMaxSpeed(MAX_SPEED);
 
   Serial.begin(2000000);
 
@@ -52,7 +47,7 @@ double dY = 0;
 int currentPenPower = 0;
 bool stopReceived = false;
 void loop() {
-  if (((X.currentPosition() >= dX && X.speed() > 0) || (X.currentPosition() <= dX && X.speed() < 0) || X.speed() == 0) && ((YA.currentPosition() >= dY && YA.speed() > 0) || (YA.currentPosition() <= dY && YA.speed() < 0) || YA.speed() == 0)){
+  if (((X.currentPosition() >= dX && X.speed() > 0) || (X.currentPosition() <= dX && X.speed() < 0) || X.speed() == 0) && ((Y.currentPosition() >= dY && Y.speed() > 0) || (Y.currentPosition() <= dY && Y.speed() < 0) || Y.speed() == 0)){
     digitalWrite(ENABLE, HIGH);
     printingLine = false;
     Instruction nextInstruction = FetchInstruction();
@@ -75,8 +70,7 @@ void loop() {
     }
     
     X.runSpeed();
-    YA.runSpeed();
-    YB.runSpeed();
+    Y.runSpeed();
   }
 }
 
@@ -112,13 +106,17 @@ Instruction FetchInstruction() {
 void ExecuteInstruction(Instruction instruction) {
   if (instruction.type == penPower) {
     int laserPower = instruction.op.substring(9, instruction.op.length()).toInt();
-    analogWrite(PEN, laserPower);
+    if(laserPower == 255) {
+      digitalWrite(PEN, HIGH);
+    }
+    else {
+      analogWrite(PEN, laserPower);
+    }
     currentPenPower = laserPower;
   }
   else if (instruction.type == STOP){
     X.setSpeed(0);
-    YA.setSpeed(0);
-    YB.setSpeed(0);
+    Y.setSpeed(0);
   }
   else if (instruction.type == printLine) {
     int commaIndex = instruction.op.indexOf(',');
@@ -149,9 +147,8 @@ void ExecuteInstruction(Instruction instruction) {
     
     digitalWrite(ENABLE, LOW);
     X.setCurrentPosition(0);
-    X.setSpeed(signedTime > 0 ? MAX_SPEED * 4 : -MAX_SPEED * 4);
-    YA.setSpeed(0);
-    YB.setSpeed(0);
+    X.setSpeed(signedTime > 0 ? MAX_SPEED : -MAX_SPEED);
+    Y.setSpeed(0);
   }
   else if (instruction.type == velocityTime) {
     int commaIndex0 = instruction.op.indexOf(',');
@@ -165,10 +162,8 @@ void ExecuteInstruction(Instruction instruction) {
     
     digitalWrite(ENABLE, LOW);
     X.setCurrentPosition(0);
-    YA.setCurrentPosition(0);
-    YB.setCurrentPosition(0);
+    Y.setCurrentPosition(0);
     X.setSpeed(MAX_SPEED * vX);
-    YA.setSpeed(MAX_SPEED * vY);
-    YB.setSpeed(MAX_SPEED * vY);
+    Y.setSpeed(MAX_SPEED * vY);
   }
 }
