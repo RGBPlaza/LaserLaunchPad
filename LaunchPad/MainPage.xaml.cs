@@ -17,7 +17,9 @@ using System.Text;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 using SerialPortLib;
-using System.Timers;
+using Newtonsoft.Json;
+using Windows.UI.Xaml.Navigation;
+using Windows.ApplicationModel.Activation;
 
 namespace LaunchPad
 {
@@ -27,6 +29,10 @@ namespace LaunchPad
         {
             this.InitializeComponent();
             filePicker = new FileOpenPicker();
+            filePicker.SuggestedStartLocation = PickerLocationId.Desktop;
+            fileSavePicker = new FileSavePicker();
+            fileSavePicker.FileTypeChoices.Add("Laser LaunchPad Project", new string[] { ".llpp" });
+            fileSavePicker.SuggestedStartLocation = PickerLocationId.Desktop;
             designs = new List<Design>();
             cutterSerial = new SerialPortInput();
             //instructionTimer = new Timer() { Interval = 64, AutoReset = true };
@@ -42,6 +48,7 @@ namespace LaunchPad
 
         private StorageFile imageFile;
         private readonly FileOpenPicker filePicker;
+        private readonly FileSavePicker fileSavePicker;
         private readonly List<Design> designs;
         private Design selectedDesign;
         private static SerialPortInput cutterSerial;
@@ -57,12 +64,12 @@ namespace LaunchPad
             imageFile = await filePicker.PickSingleFileAsync();
             if (imageFile != null)
             {
-                using (IRandomAccessStream stream = await imageFile.OpenAsync(FileAccessMode.ReadWrite))
+                using (IRandomAccessStream stream = await imageFile.OpenAsync(FileAccessMode.Read))
                 {
                     BitmapDecoder decoder = await BitmapDecoder.CreateAsync(stream);
                     if (decoder.BitmapPixelFormat == BitmapPixelFormat.Bgra8)
                     {
-                        selectedDesign = new BitmapDesign(decoder, await decoder.GetPixelDataAsync());
+                        selectedDesign = new BitmapDesign(await decoder.GetPixelDataAsync(), decoder);
                         designs.Add(selectedDesign);
                         UpdatePreview();
                         PropertiesScrollView.Visibility = Visibility.Visible;
@@ -78,7 +85,6 @@ namespace LaunchPad
         {
             filePicker.FileTypeFilter.Clear();
             filePicker.FileTypeFilter.Add(".svg");
-            filePicker.SuggestedStartLocation = PickerLocationId.Desktop;
             imageFile = await filePicker.PickSingleFileAsync();
             if (imageFile != null)
             {
@@ -295,7 +301,7 @@ namespace LaunchPad
             {
                 if ((uint)e.NewValue != ((BitmapDesign)selectedDesign).Threshold)
                 {
-                    ((BitmapDesign)selectedDesign).Threshold = (uint)e.NewValue;
+                    ((BitmapDesign)selectedDesign).Threshold = (int)e.NewValue;
                     UpdatePreview();
                 }
             }
@@ -338,7 +344,7 @@ namespace LaunchPad
             {
                 if ((uint)e.NewValue != ((BitmapDesign)selectedDesign).Shades)
                 {
-                    ((BitmapDesign)selectedDesign).Shades = (uint)e.NewValue;
+                    ((BitmapDesign)selectedDesign).Shades = (int)e.NewValue;
                     UpdatePreview();
                 }
             }
@@ -415,6 +421,74 @@ namespace LaunchPad
                     selectedDesign.X = xPos;
                     UpdatePreview();
                 }
+            }
+        }
+
+        private async void LoadProjectButton_Click(object sender, RoutedEventArgs e)
+        {
+            filePicker.FileTypeFilter.Clear();
+            filePicker.FileTypeFilter.Add(".llpp");
+            imageFile = await filePicker.PickSingleFileAsync();
+            if (imageFile != null)
+            {
+                string projectFileString = await FileIO.ReadTextAsync(imageFile);
+                var proj = JsonConvert.DeserializeObject<LaserLaunchPadProject>(projectFileString);
+
+                designs.Clear();
+                foreach(SVGProjectObj svgObj in proj.SVGProjectObjs)
+                    designs.Add(new SVGDesign(svgObj));
+                foreach (BitmapProjectObj bmpObj in proj.BitmapProjectObjs)
+                    designs.Add(new BitmapDesign(bmpObj));
+
+                selectedDesign = designs[0];
+                UpdatePreview();
+                PropertiesScrollView.Visibility = Visibility.Visible;
+                PropertiesTitleBlock.Visibility = Visibility.Visible;
+
+                PrintButton.IsEnabled = true;
+            }
+        }
+
+        private async void SaveProjectButton_Click(object sender, RoutedEventArgs e)
+        {
+            imageFile = await fileSavePicker.PickSaveFileAsync();
+            if(imageFile != null)
+            {
+                var proj = new LaserLaunchPadProject();
+                foreach(Design design in designs)
+                {
+                    if (design.GetType() == typeof(SVGDesign))
+                        proj.SVGProjectObjs.Add(((SVGDesign)design).GetProjectObj());
+                    else if (design.GetType() == typeof(BitmapDesign))
+                        proj.BitmapProjectObjs.Add(((BitmapDesign)design).GetProjectObj());
+                }
+                string projectFileString = JsonConvert.SerializeObject(proj);
+                await FileIO.WriteTextAsync(imageFile, projectFileString);
+            }
+        }
+
+        protected override async void OnNavigatedTo(NavigationEventArgs e)
+        {
+            base.OnNavigatedTo(e);
+            if (e.Parameter.GetType() == typeof(FileActivatedEventArgs))
+            {
+                var args = (FileActivatedEventArgs)e.Parameter;
+                imageFile = (StorageFile)args.Files[0];
+                string projectFileString = await FileIO.ReadTextAsync(imageFile);
+                var proj = JsonConvert.DeserializeObject<LaserLaunchPadProject>(projectFileString);
+
+                designs.Clear();
+                foreach (SVGProjectObj svgObj in proj.SVGProjectObjs)
+                    designs.Add(new SVGDesign(svgObj));
+                foreach (BitmapProjectObj bmpObj in proj.BitmapProjectObjs)
+                    designs.Add(new BitmapDesign(bmpObj));
+
+                selectedDesign = designs[0];
+                UpdatePreview();
+                PropertiesScrollView.Visibility = Visibility.Visible;
+                PropertiesTitleBlock.Visibility = Visibility.Visible;
+
+                PrintButton.IsEnabled = true;
             }
         }
 
@@ -536,15 +610,12 @@ namespace LaunchPad
     {
         public readonly int Width;
         public readonly int Height;
-        private readonly bool ignoreAlpha;
         private readonly List<BitmapPixel> pixels;
 
-        public BitmapEditor(PixelDataProvider pixelDataProvider, uint width, uint height, bool ignoreAlpha)
+        public BitmapEditor(byte[] pixelData, double width, double height)
         {
-            byte[] pixelData = pixelDataProvider.DetachPixelData();
             Width = (int)width;
             Height = (int)height;
-            this.ignoreAlpha = ignoreAlpha;
             pixels = new List<BitmapPixel>();
             for (int i = 0; i < pixelData.Length; i += 4)
             {
@@ -564,7 +635,7 @@ namespace LaunchPad
             pixels[pixelIndex] = pixel;
         }
 
-        public byte[,] GetShadeMap(uint threshold, uint shades, bool printNegative)
+        public byte[,] GetShadeMap(int threshold, int shades, bool printNegative)
         {
             byte[,] shadeMap = new byte[Width, Height];
             double interval = 1d / (shades - 1);
@@ -592,8 +663,7 @@ namespace LaunchPad
 
     public abstract class Design
     {
-        public double X { get; set; } = 0;
-        public double Y { get; set; } = 0;
+        public const double previewScale = 2;
 
         protected double originalWidth;
         protected double originalHeight;
@@ -601,12 +671,17 @@ namespace LaunchPad
         protected double width;
         protected double height;
         protected double scale = 1;
-        public const double previewScale = 2;
+        protected double x = 0;
+        protected double y = 0;
 
+        public double X { get => x; set => x = value; }
+        public double Y { get => y; set => y = value; }
         public double Scale { get => scale; set { scale = value; width = originalWidth * scale; height = originalHeight * scale; } }
         public double Width { get => width; set { width = value; scale = width / originalWidth; height = originalHeight * scale; } }
         public double Height { get => height; set { height = value; scale = height / originalHeight; width = originalWidth * scale; } }
         public int LaserPower { get; set; } = 128;
+        public double OriginalWidth { get => originalWidth; }
+        public double OriginalHeight { get => originalHeight; }
 
         public abstract List<CutterInstruction> GetArduinoInstructions();
 
@@ -620,10 +695,12 @@ namespace LaunchPad
             paths = new List<SvgPathSegmentList>();
             points = new List<PointCollection>();
             previewPoints = new List<PointCollection>();
-            XmlNodeList Paths = xDoc.GetElementsByTagName("path");
-            foreach (XmlElement path in Paths)
+            _svgPathData = new List<string>();
+            XmlNodeList xmlPaths = xDoc.GetElementsByTagName("path");
+            foreach (XmlElement path in xmlPaths)
             {
                 string pathData = path.GetAttribute("d");
+                _svgPathData.Add(pathData);
                 SvgPathSegmentList segments = SvgPathBuilder.Parse(pathData);
                 paths.Add(segments);
             }
@@ -633,14 +710,46 @@ namespace LaunchPad
             UpdatePoints();
         }
 
-        private float step { get => MathF.Pow(1.2f, -Smoothness); }
+        public SVGDesign(SVGProjectObj projectObj)
+        {
+            paths = new List<SvgPathSegmentList>();
+            points = new List<PointCollection>();
+            previewPoints = new List<PointCollection>();
+            _svgPathData = new List<string>();
+            LoadValues(projectObj); 
+            foreach (string pathData in _svgPathData)
+            {
+                SvgPathSegmentList segments = SvgPathBuilder.Parse(pathData);
+                paths.Add(segments);
+            }
+            UpdatePoints();
+        }
 
+        private void LoadValues(SVGProjectObj projectObj)
+        {
+            x = projectObj.X;
+            y = projectObj.Y;
+            originalWidth = projectObj.OriginalWidth;
+            originalHeight = projectObj.OriginalHeight;
+            width = projectObj.Width;
+            height = projectObj.Height;
+            scale = width / originalWidth;
+            LaserPower = projectObj.LaserPower;
+            Smoothness = projectObj.Smoothness;
+            Passes = projectObj.Passes;
+            _svgPathData = projectObj.PathData;
+        }
+
+        public SVGProjectObj GetProjectObj() => new SVGProjectObj(X, Y, OriginalWidth, OriginalHeight, Width, Height, LaserPower, Smoothness, Passes, _svgPathData);
+
+        private float step { get => MathF.Pow(1.2f, -Smoothness); }
         public int Smoothness { get; set; } = 1;
         public int Passes { get; set; } = 1;
 
-        private List<SvgPathSegmentList> paths;
-        private List<PointCollection> points;
-        private List<PointCollection> previewPoints;
+        private List<string> _svgPathData;
+        private readonly List<SvgPathSegmentList> paths;
+        private readonly List<PointCollection> points;
+        private readonly List<PointCollection> previewPoints;
 
         private void UpdatePoints()
         {
@@ -813,18 +922,46 @@ namespace LaunchPad
 
     public class BitmapDesign : Design
     {
-        public BitmapDesign(BitmapDecoder decoder, PixelDataProvider pixelData)
+        public BitmapDesign(PixelDataProvider pixelDataProvider, BitmapDecoder decoder)
         {
-            bitmapEditor = new BitmapEditor(pixelData, decoder.PixelWidth, decoder.PixelHeight, decoder.BitmapAlphaMode == BitmapAlphaMode.Ignore);
+            _pixelData = pixelDataProvider.DetachPixelData();
+            bitmapEditor = new BitmapEditor(_pixelData, decoder.PixelWidth, decoder.PixelHeight);
             (originalWidth, originalHeight) = (decoder.PixelWidth, decoder.PixelHeight);
             (width, height) = (originalWidth, originalHeight);
             UpdateBWMap();
         }
-        private readonly BitmapEditor bitmapEditor;
-        private byte[,] shadeMap;
 
-        public uint Threshold { get; set; } = 128;
-        public uint Shades { get; set; } = 2;
+        public BitmapDesign(BitmapProjectObj projectObj)
+        {
+            LoadValues(projectObj);
+            bitmapEditor = new BitmapEditor(_pixelData, originalWidth, originalHeight);
+            UpdateBWMap();
+        }
+
+        public BitmapProjectObj GetProjectObj() => new BitmapProjectObj(X, Y, OriginalWidth, OriginalHeight, Width, Height, LaserPower, Shades, Threshold, IsNegative, _pixelData);
+
+        private readonly BitmapEditor bitmapEditor;
+        private byte[] _pixelData;
+        private byte[,] shadeMap;
+        
+        private void LoadValues(BitmapProjectObj projectObj)
+        {
+            x = projectObj.X;
+            y = projectObj.Y;
+            originalWidth = projectObj.OriginalWidth;
+            originalHeight = projectObj.OriginalHeight;
+            width = projectObj.Width;
+            height = projectObj.Height;
+            scale = width / originalWidth;
+            LaserPower = projectObj.LaserPower;
+            Threshold = projectObj.Threshold;
+            Shades = projectObj.Shades;
+            IsNegative = projectObj.IsNegative;
+            _pixelData = projectObj.PixelData;
+        }
+
+        public int Threshold { get; set; } = 128;
+        public int Shades { get; set; } = 2;
         public bool IsNegative { get; set; } = false;
 
         private void UpdateBWMap() => shadeMap = bitmapEditor.GetShadeMap(Threshold, Shades, IsNegative);
@@ -1059,4 +1196,72 @@ namespace LaunchPad
         public static readonly CutterInstruction ReturnToOriginInstruction = new CutterInstruction(new Windows.Foundation.Point(0, 0), 0, 0);
         public static string StopMessage = "STOP;";
     }
+
+    public abstract class ProjectObj 
+    {
+        public double X;
+        public double Y;
+        public double OriginalWidth;
+        public double OriginalHeight;
+        public double Width;
+        public double Height;
+        public int LaserPower;
+    }
+
+    public class SVGProjectObj : ProjectObj
+    {
+        public SVGProjectObj(double x, double y, double oW, double oH, double w, double h, int lP, int s, int p, List<string> pathData)
+        {
+            X = x;
+            Y = y;
+            OriginalWidth = oW;
+            OriginalHeight = oH;
+            Width = w;
+            Height = h;
+            LaserPower = lP;
+            Smoothness = s;
+            Passes = p;
+            PathData = pathData;
+        }
+
+        public List<string> PathData;
+        public int Smoothness;
+        public int Passes;
+    }
+
+    public class BitmapProjectObj : ProjectObj
+    {
+        public BitmapProjectObj(double x, double y, double oW, double oH, double w, double h, int lP, int s, int t, bool iN, byte[] pixelData)
+        {
+            X = x;
+            Y = y;
+            OriginalWidth = oW;
+            OriginalHeight = oH;
+            Width = w;
+            Height = h;
+            LaserPower = lP;
+            Shades = s;
+            Threshold = t;
+            IsNegative = iN;
+            PixelData = pixelData;
+        }
+
+        public byte[] PixelData;
+        public int Threshold;
+        public int Shades;
+        public bool IsNegative;
+    }
+
+    public class LaserLaunchPadProject
+    {
+        public LaserLaunchPadProject()
+        {
+            SVGProjectObjs = new List<SVGProjectObj>();
+            BitmapProjectObjs = new List<BitmapProjectObj>();
+        }
+
+        public List<SVGProjectObj> SVGProjectObjs;
+        public List<BitmapProjectObj> BitmapProjectObjs;
+    }
+
 }

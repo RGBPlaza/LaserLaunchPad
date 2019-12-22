@@ -26,15 +26,11 @@
         <RelativePanel Grid.Row="1" Grid.RowSpan="2" Background="{StaticResource SystemControlAccentAcrylicWindowAccentMediumHighBrush}">
             <StackPanel Padding="16" Spacing="4" RelativePanel.AlignTopWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
                 <Button Name="LoadSVGButton" Content="Load SVG" FontFamily="Bahnschrift" Click="LoadSVGButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
-                <Button Name="LoadRasterButton" Content="Load Raster" FontFamily="Bahnschrift" Click="LoadRasterButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}">
-                    <Button.Transitions>
-                        <TransitionCollection>
-                            <RepositionThemeTransition/>
-                        </TransitionCollection>
-                    </Button.Transitions>
-                </Button>
+                <Button Name="LoadRasterButton" Content="Load Raster" FontFamily="Bahnschrift" Click="LoadRasterButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
+                <Button Name="LoadProjectButton" Content="Load Project" FontFamily="Bahnschrift" Click="LoadProjectButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
+                <Button Name="SaveProjectButton" Content="Save Project" FontFamily="Bahnschrift" Click="SaveProjectButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}"/>
             </StackPanel>
-            <StackPanel Padding="16" Spacing="16" RelativePanel.AlignBottomWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
+            <StackPanel Padding="16" Spacing="8" RelativePanel.AlignBottomWithPanel="True" RelativePanel.AlignLeftWithPanel="True" RelativePanel.AlignRightWithPanel="True">
                 <ComboBox Name="PortComboBox" FontFamily="Bahnschrift" Header="Cutter Port" DropDownOpened="PortComboBox_DropDownOpened" PlaceholderText="Select Device" SelectionChanged="PortComboBox_SelectionChanged">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
@@ -42,7 +38,7 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <StackPanel Orientation="Horizontal" Spacing="16">
+                <StackPanel Orientation="Horizontal" Spacing="4">
                     <Button Name="PrintButton" Content="Print" FontFamily="Bahnschrift" Click="PrintButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
                     <Button Name="StopButton" Content="Stop" FontFamily="Bahnschrift" Click="StopButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
                     <Button Name="NextButton" Content="Next" FontFamily="Bahnschrift" Click="NextButton_Click" Background="{StaticResource SystemControlTransparentRevealBackgroundBrush}" BorderBrush="{StaticResource SystemControlBackgroundTransparentRevealBorderBrush}" IsEnabled="False"/>
