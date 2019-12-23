@@ -39,7 +39,7 @@ void setup()
 }
 
 bool printingLine = false;
-int segmentLevels[400];
+int segmentLevels[512];
 double segmentLength;
 
 double dX = 0;
