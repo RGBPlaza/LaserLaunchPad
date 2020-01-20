@@ -663,7 +663,7 @@ namespace LaunchPad
 
     public abstract class Design
     {
-        public const double previewScale = 2;
+        public const double previewScale = 3;
 
         protected double originalWidth;
         protected double originalHeight;
@@ -1094,7 +1094,7 @@ namespace LaunchPad
 
     public class CutterInstruction
     {
-        const double scaleConst = 168;
+        const double scaleConst = 336;
         public enum InstructionType
         {
             velocityTime,

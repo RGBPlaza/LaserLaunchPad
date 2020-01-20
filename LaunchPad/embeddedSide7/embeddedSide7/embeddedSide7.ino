@@ -8,7 +8,7 @@
 
 #define PEN 6
 #define ENABLE 8
-#define MAX_SPEED (200 * 4 * 4)
+#define MAX_SPEED (200 * 1 * 2)
 
 AccelStepper X(1, X_STEP, X_DIR);
 AccelStepper Y(1, Y_STEP, Y_DIR);
@@ -31,8 +31,8 @@ void setup()
   pinMode(ENABLE, OUTPUT);
   analogWrite(PEN, 0);
   
-  X.setMaxSpeed(MAX_SPEED * 2);
-  Y.setMaxSpeed(MAX_SPEED);
+  X.setMaxSpeed(MAX_SPEED * 5);
+  Y.setMaxSpeed(MAX_SPEED * 2);
 
   Serial.begin(2000000);
 
@@ -147,7 +147,7 @@ void ExecuteInstruction(Instruction instruction) {
     
     digitalWrite(ENABLE, LOW);
     X.setCurrentPosition(0);
-    X.setSpeed(signedTime > 0 ? MAX_SPEED : -MAX_SPEED);
+    X.setSpeed(signedTime > 0 ? MAX_SPEED * 3 : -MAX_SPEED * 3);
     Y.setSpeed(0);
   }
   else if (instruction.type == velocityTime) {
